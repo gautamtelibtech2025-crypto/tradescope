@@ -67,6 +67,41 @@ function normalizeSymbol(sym: string): string {
   return String(sym).replace("NSE:", "").replace("BSE:", "").replace("-EQ", "").trim().toUpperCase();
 }
 
+function buildSymbolCandidates(sym: string): string[] {
+  const raw = String(sym || "").trim().toUpperCase();
+  const base = normalizeSymbol(raw);
+  const candidates = [
+    raw,
+    `NSE:${base}`,
+    `NSE:${base}-EQ`,
+    base,
+    `${base}-EQ`,
+  ].filter(Boolean);
+  return [...new Set(candidates)];
+}
+
+async function getHistoryWithFallback(
+  sym: string,
+  resolution: string,
+  appId: string,
+  token: string,
+  lookbackDays: number,
+): Promise<{ data: any; usedSymbol: string; lastMessage: string }> {
+  const candidates = buildSymbolCandidates(sym);
+  let lastMessage = "";
+  for (const candidate of candidates) {
+    const contFlags = resolution === "D" || resolution === "W" || resolution === "M" ? [1, 0] : [0, 1];
+    for (const flag of contFlags) {
+      const data = await getHistoricalData(candidate, resolution, appId, token, lookbackDays, flag);
+      if (data?.s === "ok" && data?.candles?.length) {
+        return { data, usedSymbol: candidate, lastMessage: "" };
+      }
+      lastMessage = String(data?.message || data?.s || "Invalid input");
+    }
+  }
+  return { data: null, usedSymbol: candidates[0] || sym, lastMessage };
+}
+
 function istDateKey(epochSec: number): string {
   const d = new Date((epochSec + 19800) * 1000);
   const y = d.getUTCFullYear();
@@ -143,19 +178,23 @@ serve(async (req) => {
         const mcapCr = FO_MCAP_CR[name];
         if (!mcapCr || mcapCr < min_mcap_cr) continue;
 
-        const [dailyData, intradayData] = await Promise.all([
-          getHistoricalData(sym, "D", app_id, access_token, 400),
-          getHistoricalData(sym, "15", app_id, access_token, 20),
+        const [dailyRes, intradayRes] = await Promise.all([
+          getHistoryWithFallback(sym, "D", app_id, access_token, 400),
+          getHistoryWithFallback(sym, "15", app_id, access_token, 20),
         ]);
 
-        if (dailyData.s !== "ok" || !dailyData.candles?.length || intradayData.s !== "ok" || !intradayData.candles?.length) {
-          const msg = String(dailyData?.message || intradayData?.message || dailyData?.s || intradayData?.s || "").toLowerCase();
+        const dailyData = dailyRes.data;
+        const intradayData = intradayRes.data;
+
+        if (!dailyData || !intradayData) {
+          const msgRaw = `${dailyRes.lastMessage || ""} ${intradayRes.lastMessage || ""}`.trim();
+          const msg = msgRaw.toLowerCase();
           if (msg.includes("no_data") || msg.includes("no data")) {
             noDataCount += 1;
             continue;
           }
           apiFailures += 1;
-          if (!sampleFailure) sampleFailure = `${sym}: ${dailyData?.message || intradayData?.message || "No candles"}`;
+          if (!sampleFailure) sampleFailure = `${sym}: ${msgRaw || "No candles"}`;
           continue;
         }
 

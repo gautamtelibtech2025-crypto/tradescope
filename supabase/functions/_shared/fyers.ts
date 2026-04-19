@@ -12,40 +12,59 @@ export async function getHistoricalData(
   resolution: string,
   appId: string,
   token: string,
-  lookbackDays = 365
+  lookbackDays = 365,
+  contFlag = 1
 ) {
   const to = Math.floor(Date.now() / 1000);
   const from = to - lookbackDays * 24 * 3600;
   const encodedSymbol = encodeURIComponent(symbol);
   const encodedResolution = encodeURIComponent(resolution);
-  const url = `https://api-t1.fyers.in/data/history?symbol=${encodedSymbol}&resolution=${encodedResolution}&date_format=0&range_from=${from}&range_to=${to}&cont_flag=1`;
+  const isIntraday = !["D", "W", "M"].includes(String(resolution).toUpperCase());
+  const toDate = new Date(to * 1000).toISOString().slice(0, 10);
+  const fromDate = new Date(from * 1000).toISOString().slice(0, 10);
+  const urls = [
+    `https://api-t1.fyers.in/data/history?symbol=${encodedSymbol}&resolution=${encodedResolution}&date_format=0&range_from=${from}&range_to=${to}&cont_flag=${contFlag}`,
+    `https://api-t1.fyers.in/data/history?symbol=${encodedSymbol}&resolution=${encodedResolution}&date_format=1&range_from=${fromDate}&range_to=${toDate}&cont_flag=${contFlag}`,
+  ];
   const maxRetries = 3;
   let lastBody = "";
+  const maxUrlTries = isIntraday ? urls.length : 1;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const res = await fetch(url, {
-      headers: { Authorization: `${appId}:${token}` },
-    });
+  for (let urlIdx = 0; urlIdx < maxUrlTries; urlIdx++) {
+    const url = urls[urlIdx];
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const res = await fetch(url, {
+        headers: { Authorization: `${appId}:${token}` },
+      });
 
-    const bodyText = await res.text();
-    lastBody = bodyText;
+      const bodyText = await res.text();
+      lastBody = bodyText;
 
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(bodyText);
-    } catch {
-      parsed = { s: "error", message: bodyText };
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(bodyText);
+      } catch {
+        parsed = { s: "error", message: bodyText };
+      }
+
+      const msg = String(parsed?.message || "").toLowerCase();
+      const rateLimited = res.status === 429 || msg.includes("request limit") || msg.includes("too many requests");
+      const invalidInput = msg.includes("invalid input") || msg.includes("invalid symbol");
+
+      if (!rateLimited) {
+        if (parsed?.s === "ok" || !invalidInput || urlIdx === maxUrlTries - 1) {
+          return parsed;
+        }
+        break;
+      }
+
+      if (attempt === maxRetries) {
+        return parsed;
+      }
+
+      const waitMs = 1200 * (attempt + 1);
+      await new Promise((r) => setTimeout(r, waitMs));
     }
-
-    const msg = String(parsed?.message || "").toLowerCase();
-    const rateLimited = res.status === 429 || msg.includes("request limit") || msg.includes("too many requests");
-
-    if (!rateLimited || attempt === maxRetries) {
-      return parsed;
-    }
-
-    const waitMs = 1200 * (attempt + 1);
-    await new Promise((r) => setTimeout(r, waitMs));
   }
 
   return { s: "error", message: lastBody || "FYERS history request failed" };
