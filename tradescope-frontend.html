@@ -169,6 +169,7 @@ tbody td { padding:10px 12px; white-space:nowrap; }
     <div class="nav-item" onclick="openPatternPage('head_shoulders')"><span class="ic">🔻</span> H&S Pattern</div>
     <div class="nav-item" onclick="openPatternPage('wm_pattern')"><span class="ic">〽️</span> W / M Pattern</div>
     <div class="nav-item" onclick="showPage('rsi')"><span class="ic">⚡</span> RSI Scanner</div>
+    <div class="nav-item" onclick="showPage('intraday')"><span class="ic">🎯</span> NSE 2-4% Intraday <span class="nav-badge">PRO</span></div>
     <div class="nav-item" onclick="showPage('combo')"><span class="ic">🎯</span> Combo (All) <span class="nav-badge">NEW</span></div>
   </div>
 
@@ -217,6 +218,7 @@ supabase functions deploy scan-ema<br>
 supabase functions deploy scan-breakout<br>
 supabase functions deploy scan-rsi<br>
 supabase functions deploy scan-pattern<br>
+supabase functions deploy scan-intraday<br>
 supabase functions deploy scan-combo
           </div>
         </div>
@@ -406,6 +408,42 @@ supabase functions deploy scan-combo
         <div class="table-wrap">
           <table><thead><tr><th>Symbol</th><th>CMP ₹</th><th>Pattern</th><th>Rim/Neckline</th><th>Handle/Ref Low</th><th>21 EMA</th><th>Vol Ratio</th><th>Signal</th></tr></thead>
           <tbody id="tbody-pattern"><tr><td colspan="8"><div class="empty"><div class="empty-icon">☕</div><div class="empty-text">Pattern scan run karo</div></div></td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ COMBO ══ -->
+    <div class="page" id="page-intraday">
+      <div class="page-hdr">
+        <div><div class="page-title">NSE Intraday 2-4% Scanner</div><div class="page-desc">F&O + Volume Surge + ATR + First Hour Move + RSI(15m) + VWAP Bias</div></div>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV('intraday')">↓ Export CSV</button>
+      </div>
+      <div class="card">
+        <div class="config-grid">
+          <div><label class="lbl">Exchange</label><select class="inp" id="intra-exchange"><option>NSE</option></select></div>
+          <div><label class="lbl">Vol Ratio Min</label><input type="number" class="inp" id="intra-volratio" value="2" step="0.1"></div>
+          <div><label class="lbl">Min Volume</label><input type="number" class="inp" id="intra-minvol" value="5000000"></div>
+          <div><label class="lbl">First Hour %</label><input type="number" class="inp" id="intra-fh" value="1.5" step="0.1"></div>
+          <div><label class="lbl">ATR % Min</label><input type="number" class="inp" id="intra-atr" value="1.8" step="0.1"></div>
+          <div><label class="lbl">Min Price ₹</label><input type="number" class="inp" id="intra-minprice" value="100"></div>
+          <div><label class="lbl">Max Price ₹</label><input type="number" class="inp" id="intra-maxprice" value="2500"></div>
+          <div><label class="lbl">Min MCap (Cr)</label><input type="number" class="inp" id="intra-mcap" value="5000"></div>
+          <div><label class="lbl">RSI Min</label><input type="number" class="inp" id="intra-rsimin" value="35"></div>
+          <div><label class="lbl">RSI Max</label><input type="number" class="inp" id="intra-rsimax" value="70"></div>
+          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="intra-limit" value="1200"></div>
+        </div>
+        <button class="btn btn-primary" id="btn-intraday" onclick="runScanner('intraday')">▶ Run Intraday Scanner</button>
+        <div class="progress-wrap" id="progress-intraday">
+          <div class="progress-lbl"><span id="ptxt-intraday">Scanning...</span><span id="ppct-intraday">0%</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="pfill-intraday"></div></div>
+        </div>
+        <div class="alert" id="alert-intraday"></div>
+      </div>
+      <div class="results-wrap">
+        <div class="results-hdr"><span class="results-title">INTRADAY TARGET RESULTS</span><span class="results-count" id="count-intraday">0 Signals</span></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>1st Hr %</th><th>Gap %</th><th>ATR %</th><th>Vol Ratio</th><th>RSI 15m</th><th>VWAP Bias</th><th>MCap Cr</th><th>Signal</th></tr></thead>
+          <tbody id="tbody-intraday"><tr><td colspan="11"><div class="empty"><div class="empty-icon">🎯</div><div class="empty-text">Scanner run karo</div></div></td></tr></tbody></table>
         </div>
       </div>
     </div>
@@ -623,8 +661,8 @@ async function runScanner(type) {
 function stopScan() { scanActive = false; }
 
 function getSymParams(type) {
-  const exchangeMap = { volume:'vol-exchange', ema:'ema-exchange', breakout:'bo-exchange', rsi:'rsi-exchange', pattern:'pattern-exchange', combo:'combo-exchange' };
-  const limitMap    = { volume:'vol-limit', ema:'ema-limit', breakout:'bo-limit', rsi:'rsi-limit', pattern:'pattern-limit', combo:'combo-limit' };
+  const exchangeMap = { volume:'vol-exchange', ema:'ema-exchange', breakout:'bo-exchange', rsi:'rsi-exchange', pattern:'pattern-exchange', intraday:'intra-exchange', combo:'combo-exchange' };
+  const limitMap    = { volume:'vol-limit', ema:'ema-limit', breakout:'bo-limit', rsi:'rsi-limit', pattern:'pattern-limit', intraday:'intra-limit', combo:'combo-limit' };
   return {
     exchange: document.getElementById(exchangeMap[type])?.value || 'NSE',
     limit: parseInt(document.getElementById(limitMap[type])?.value || 200)
@@ -671,6 +709,17 @@ function getScanParams(type) {
     p.touch_dist    = parseFloat(document.getElementById('cup-touch').value);
     p.breakout_vol  = parseFloat(document.getElementById('cup-brvol').value);
     p.min_price     = parseFloat(document.getElementById('pattern-minprice').value);
+  } else if (type === 'intraday') {
+    p.vol_ratio_min = parseFloat(document.getElementById('intra-volratio').value);
+    p.min_volume    = parseInt(document.getElementById('intra-minvol').value);
+    p.first_hour_move = parseFloat(document.getElementById('intra-fh').value);
+    p.atr_min       = parseFloat(document.getElementById('intra-atr').value);
+    p.min_price     = parseFloat(document.getElementById('intra-minprice').value);
+    p.max_price     = parseFloat(document.getElementById('intra-maxprice').value);
+    p.min_mcap_cr   = parseFloat(document.getElementById('intra-mcap').value);
+    p.rsi_period    = 14;
+    p.rsi_min       = parseFloat(document.getElementById('intra-rsimin').value);
+    p.rsi_max       = parseFloat(document.getElementById('intra-rsimax').value);
   } else if (type === 'combo') {
     p.timeframe    = document.getElementById('combo-tf').value;
     p.min_signals  = parseInt(document.getElementById('combo-minsig').value);
@@ -711,6 +760,7 @@ function buildRow(type, r) {
     breakout: `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>₹${r.range_high}</td><td class="neu">₹${r.range_low}</td><td>${r.range_pct}%</td><td>${r.vol_ratio}x</td><td class="neu">₹${r.ema_21}</td><td>${r.rsi}</td><td><span class="badge ${String(r.signal || '').includes('BULL')?'badge-green':'badge-red'}">${r.signal || 'N/A'}</span></td>`,
     rsi:      `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>${r.rsi}</td><td><span class="badge badge-amber">${r.rsi_signal}</span></td><td class="neu">₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td class="neu" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;">${r.setup}</td>`,
     pattern:  `<td class="sym">${r.symbol}</td><td class="up">₹${r.cmp}</td><td><span class="badge badge-blue">${r.pattern}</span></td><td>₹${r.rim_resistance}</td><td class="neu">₹${r.handle_low}</td><td>₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td><span class="badge ${String(r.signal || '').includes('BREAKOUT')?'badge-green':'badge-amber'}">${r.signal}</span></td>`,
+    intraday: `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td class="${Math.abs(parseFloat(r.first_hour_pct))>=1.5?'up':'neu'}">${r.first_hour_pct}%</td><td>${r.gap_pct}%</td><td>${r.atr_pct}%</td><td>${r.vol_ratio}x</td><td>${r.rsi_15m}</td><td><span class="badge ${String(r.vwap_bias).includes('ABOVE')?'badge-green':'badge-red'}">${r.vwap_bias}</span></td><td>${r.market_cap_cr}</td><td><span class="badge ${r.signal==='LONG'?'badge-green':'badge-red'}">${r.signal}</span></td>`,
     combo:    `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td style="font-size:11px;max-width:160px">${r.signals}</td><td class="up">${r.score}</td><td class="neu">₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td>${r.rsi}</td><td class="up">₹${r.entry}</td><td class="dn">₹${r.sl}</td><td class="up">₹${r.target}</td>`,
   };
   return `<tr>${rows[type] || ''}</tr>`;
