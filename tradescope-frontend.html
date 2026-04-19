@@ -519,7 +519,7 @@ function initCredentials() {
 }
 
 // ── SUPABASE FUNCTION CALL ──
-async function callFn(fnName, body, timeoutMs = 20000) {
+async function callFn(fnName, body, timeoutMs = 60000) {
   let parsedUrl;
   try {
     parsedUrl = new URL(sbUrl);
@@ -653,7 +653,7 @@ async function runScanner(type) {
   try {
     // 1. Get symbols
     const symParams = getSymParams(type);
-    const timeoutMs = type === 'intraday' ? 60000 : 20000;
+    const timeoutMs = 60000;
     let symbols = [];
     if (type === 'intraday') {
       const limit = Math.max(10, parseInt(document.getElementById('intra-limit')?.value || '300'));
