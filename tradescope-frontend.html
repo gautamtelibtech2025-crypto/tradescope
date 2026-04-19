@@ -512,12 +512,57 @@ function initCredentials() {
 
 // ── SUPABASE FUNCTION CALL ──
 async function callFn(fnName, body) {
-  const res = await fetch(`${sbUrl}/functions/v1/${fnName}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sbKey}`, 'apikey': sbKey },
-    body: JSON.stringify(body)
-  });
-  return res.json();
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(sbUrl);
+  } catch {
+    throw new Error('Supabase URL invalid. Example: https://xxxx.supabase.co');
+  }
+
+  if (parsedUrl.protocol !== 'https:') {
+    throw new Error('Supabase URL must start with https://');
+  }
+
+  if (!navigator.onLine) {
+    throw new Error('No internet connection on this device.');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const res = await fetch(`${sbUrl}/functions/v1/${fnName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sbKey}`, 'apikey': sbKey },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { success: false, message: text || 'Invalid JSON response from server.' };
+    }
+
+    if (!res.ok) {
+      const msg = data?.message || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+
+    return data;
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Request timed out (20s). Check network and try again.');
+    }
+    if (String(err?.message || '').toLowerCase().includes('failed to fetch')) {
+      throw new Error('Network/CORS blocked request. Check Supabase URL, browser extension/adblock, and internet.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // ── NAVIGATION ──
@@ -582,7 +627,7 @@ async function connectApp() {
       showAlert('connectAlert', 'err', '✗ ' + (data.message || 'Connection failed'));
     }
   } catch (e) {
-    showAlert('connectAlert', 'err', '✗ Supabase URL ya Key galat hai: ' + e.message);
+    showAlert('connectAlert', 'err', '✗ Connect failed: ' + e.message);
   }
 }
 
