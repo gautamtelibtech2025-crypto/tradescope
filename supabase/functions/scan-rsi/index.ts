@@ -20,7 +20,7 @@ serve(async (req) => {
     }
 
     const {
-      timeframe = "60",
+      timeframe = "D",
       rsi_period = 14,
       setup_type = "RSI above 60 (Momentum)",
       rsi_min = 40,
@@ -28,7 +28,7 @@ serve(async (req) => {
       vol_filter = "Any",
       min_price = 20,
     } = params;
-    const lookbackDays = timeframe === "W" ? 3650 : timeframe === "D" ? 1460 : 180;
+    const getLookbackDays = (tf: string) => (tf === "W" ? 3650 : tf === "D" ? 1460 : 180);
 
     const results: object[] = [];
     let apiFailures = 0;
@@ -37,7 +37,15 @@ serve(async (req) => {
 
     for (const sym of symbols) {
       try {
-        const data = await getHistoricalData(sym, timeframe, app_id, access_token, lookbackDays);
+        let usedTimeframe = timeframe;
+        let data = await getHistoricalData(sym, usedTimeframe, app_id, access_token, getLookbackDays(usedTimeframe));
+        const msg0 = String(data?.message || data?.s || "").toLowerCase();
+        const intradayRequested = !["D", "W", "M"].includes(String(timeframe).toUpperCase());
+        if ((data.s !== "ok" || !data.candles?.length) && intradayRequested && (msg0.includes("invalid input") || msg0.includes("invalid symbol"))) {
+          usedTimeframe = "D";
+          data = await getHistoricalData(sym, usedTimeframe, app_id, access_token, getLookbackDays(usedTimeframe));
+        }
+
         if (data.s !== "ok" || !data.candles?.length) {
           const msg = String(data?.message || data?.s || "").toLowerCase();
           if (msg.includes("no_data") || msg.includes("no data")) {
@@ -130,6 +138,7 @@ serve(async (req) => {
           ema_21: ema21.toFixed(2),
           vol_ratio: volRatio,
           setup: setup_type,
+          timeframe_used: usedTimeframe,
         });
       } catch (err) {
         apiFailures += 1;
