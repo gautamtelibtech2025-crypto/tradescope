@@ -13,7 +13,8 @@ export async function getHistoricalData(
   appId: string,
   token: string,
   lookbackDays = 365,
-  contFlag = 1
+  contFlag = 1,
+  maxRetries = 3
 ) {
   const to = Math.floor(Date.now() / 1000);
   const from = to - lookbackDays * 24 * 3600;
@@ -26,7 +27,6 @@ export async function getHistoricalData(
     `https://api-t1.fyers.in/data/history?symbol=${encodedSymbol}&resolution=${encodedResolution}&date_format=0&range_from=${from}&range_to=${to}&cont_flag=${contFlag}`,
     `https://api-t1.fyers.in/data/history?symbol=${encodedSymbol}&resolution=${encodedResolution}&date_format=1&range_from=${fromDate}&range_to=${toDate}&cont_flag=${contFlag}`,
   ];
-  const maxRetries = 3;
   let lastBody = "";
   const maxUrlTries = isIntraday ? urls.length : 1;
 

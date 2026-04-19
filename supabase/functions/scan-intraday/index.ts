@@ -72,34 +72,21 @@ function buildSymbolCandidates(sym: string): string[] {
   const base = normalizeSymbol(raw);
   const candidates = [
     raw,
-    `NSE:${base}`,
     `NSE:${base}-EQ`,
-    base,
     `${base}-EQ`,
   ].filter(Boolean);
   return [...new Set(candidates)];
 }
 
-async function getHistoryWithFallback(
-  sym: string,
-  resolution: string,
-  appId: string,
-  token: string,
-  lookbackDays: number,
-): Promise<{ data: any; usedSymbol: string; lastMessage: string }> {
-  const candidates = buildSymbolCandidates(sym);
+async function getDailyHistoryStable(sym: string, appId: string, token: string): Promise<{ data: any; lastMessage: string }> {
+  const candidates = [String(sym).trim(), ...buildSymbolCandidates(sym)];
   let lastMessage = "";
-  for (const candidate of candidates) {
-    const contFlags = resolution === "D" || resolution === "W" || resolution === "M" ? [1, 0] : [0, 1];
-    for (const flag of contFlags) {
-      const data = await getHistoricalData(candidate, resolution, appId, token, lookbackDays, flag);
-      if (data?.s === "ok" && data?.candles?.length) {
-        return { data, usedSymbol: candidate, lastMessage: "" };
-      }
-      lastMessage = String(data?.message || data?.s || "Invalid input");
-    }
+  for (const candidate of [...new Set(candidates)]) {
+    const data = await getHistoricalData(candidate, "D", appId, token, 400, 1, 2);
+    if (data?.s === "ok" && data?.candles?.length) return { data, lastMessage: "" };
+    lastMessage = String(data?.message || data?.s || "Invalid input");
   }
-  return { data: null, usedSymbol: candidates[0] || sym, lastMessage };
+  return { data: null, lastMessage };
 }
 
 function istDateKey(epochSec: number): string {
@@ -164,9 +151,9 @@ serve(async (req) => {
       rsi_min = 35,
       rsi_max = 70,
       require_gap_or_first_hour = true,
+      auto_relax = true,
     } = params;
 
-    const todayKey = istDateKey(Math.floor(Date.now() / 1000));
     const results: object[] = [];
     let apiFailures = 0;
     let noDataCount = 0;
@@ -178,16 +165,11 @@ serve(async (req) => {
         const mcapCr = FO_MCAP_CR[name];
         if (!mcapCr || mcapCr < min_mcap_cr) continue;
 
-        const [dailyRes, intradayRes] = await Promise.all([
-          getHistoryWithFallback(sym, "D", app_id, access_token, 400),
-          getHistoryWithFallback(sym, "15", app_id, access_token, 20),
-        ]);
-
+        const dailyRes = await getDailyHistoryStable(sym, app_id, access_token);
         const dailyData = dailyRes.data;
-        const intradayData = intradayRes.data;
 
-        if (!dailyData || !intradayData) {
-          const msgRaw = `${dailyRes.lastMessage || ""} ${intradayRes.lastMessage || ""}`.trim();
+        if (!dailyData) {
+          const msgRaw = `${dailyRes.lastMessage || ""}`.trim();
           const msg = msgRaw.toLowerCase();
           if (msg.includes("no_data") || msg.includes("no data")) {
             noDataCount += 1;
@@ -212,32 +194,39 @@ serve(async (req) => {
 
         const avg10Vol = avg(dCandles.slice(-11, -1).map((c) => c[5]));
         const volRatio = volumeToday / avg10Vol;
-        if (volumeToday < min_volume || volRatio < vol_ratio_min) continue;
+        const strictVolPass = volumeToday >= min_volume && volRatio >= vol_ratio_min;
 
         const gapPct = ((openToday - prevClose) / prevClose) * 100;
         const atrPct = calcAtrPercent(dCandles, 14);
-        if (atrPct < atr_min) continue;
+        const strictAtrPass = atrPct >= atr_min;
 
-        const iCandles: number[][] = intradayData.candles;
-        const todayIntraday = iCandles.filter((c) => istDateKey(c[0]) === todayKey);
-        if (todayIntraday.length < 4) continue;
-
-        const firstHourOpen = todayIntraday[0][1];
-        const firstHourClose = todayIntraday[Math.min(3, todayIntraday.length - 1)][4];
-        const firstHourPct = ((firstHourClose - firstHourOpen) / firstHourOpen) * 100;
+        const firstHourPct = ((ltp - openToday) / openToday) * 100;
         const firstHourPass = Math.abs(firstHourPct) >= first_hour_move;
         const gapPass = Math.abs(gapPct) >= first_hour_move;
-        if (require_gap_or_first_hour && !(firstHourPass || gapPass)) continue;
+        const strictMovePass = !require_gap_or_first_hour || firstHourPass || gapPass;
 
-        const closes15 = iCandles.map((c) => c[4]);
-        if (closes15.length < rsi_period + 5) continue;
-        const rsi = calcRSI(closes15, rsi_period);
-        if (rsi < rsi_min || rsi > rsi_max) continue;
+        const closes = dCandles.map((c) => c[4]);
+        if (closes.length < rsi_period + 5) continue;
+        const rsi = calcRSI(closes, rsi_period);
+        const strictRsiPass = rsi >= rsi_min && rsi <= rsi_max;
 
-        const vwap = calcSessionVwap(todayIntraday);
+        const vwap = calcSessionVwap([lastDaily]);
         if (!vwap) continue;
-        const lastPrice = todayIntraday[todayIntraday.length - 1][4];
+        const lastPrice = ltp;
         const vwapBias = lastPrice >= vwap ? "ABOVE VWAP" : "BELOW VWAP";
+
+        const strictPass = strictVolPass && strictAtrPass && strictMovePass && strictRsiPass;
+        if (!strictPass && !auto_relax) continue;
+
+        let mode = "STRICT";
+        if (!strictPass) {
+          const relaxVolPass = volumeToday >= Math.max(2000000, min_volume * 0.4) && volRatio >= Math.max(1.3, vol_ratio_min * 0.7);
+          const relaxAtrPass = atrPct >= Math.max(1.0, atr_min * 0.6);
+          const relaxMovePass = Math.abs(firstHourPct) >= Math.max(0.6, first_hour_move * 0.6) || Math.abs(gapPct) >= Math.max(0.6, first_hour_move * 0.6);
+          const relaxRsiPass = rsi >= Math.max(20, rsi_min - 10) && rsi <= Math.min(85, rsi_max + 10);
+          if (!(relaxVolPass && relaxAtrPass && relaxMovePass && relaxRsiPass)) continue;
+          mode = "RELAXED";
+        }
 
         const changePct = ((ltp - prevClose) / prevClose) * 100;
         const direction = changePct >= 0 ? "LONG" : "SHORT";
@@ -257,9 +246,10 @@ serve(async (req) => {
           vwap_bias: vwapBias,
           market_cap_cr: mcapCr,
           signal: direction,
+          mode,
         });
 
-        await sleep(180);
+        await sleep(40);
       } catch (err) {
         apiFailures += 1;
         if (!sampleFailure) sampleFailure = `${sym}: ${err instanceof Error ? err.message : String(err)}`;

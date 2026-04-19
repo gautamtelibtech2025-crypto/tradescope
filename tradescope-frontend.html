@@ -430,7 +430,7 @@ supabase functions deploy scan-combo
           <div><label class="lbl">Min MCap (Cr)</label><input type="number" class="inp" id="intra-mcap" value="5000"></div>
           <div><label class="lbl">RSI Min</label><input type="number" class="inp" id="intra-rsimin" value="35"></div>
           <div><label class="lbl">RSI Max</label><input type="number" class="inp" id="intra-rsimax" value="70"></div>
-          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="intra-limit" value="1200"></div>
+          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="intra-limit" value="300"></div>
         </div>
         <button class="btn btn-primary" id="btn-intraday" onclick="runScanner('intraday')">▶ Run Intraday Scanner</button>
         <div class="progress-wrap" id="progress-intraday">
@@ -442,8 +442,8 @@ supabase functions deploy scan-combo
       <div class="results-wrap">
         <div class="results-hdr"><span class="results-title">INTRADAY TARGET RESULTS</span><span class="results-count" id="count-intraday">0 Signals</span></div>
         <div class="table-wrap">
-          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>1st Hr %</th><th>Gap %</th><th>ATR %</th><th>Vol Ratio</th><th>RSI 15m</th><th>VWAP Bias</th><th>MCap Cr</th><th>Signal</th></tr></thead>
-          <tbody id="tbody-intraday"><tr><td colspan="11"><div class="empty"><div class="empty-icon">🎯</div><div class="empty-text">Scanner run karo</div></div></td></tr></tbody></table>
+          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>1st Hr %</th><th>Gap %</th><th>ATR %</th><th>Vol Ratio</th><th>RSI 15m</th><th>VWAP Bias</th><th>MCap Cr</th><th>Mode</th><th>Signal</th></tr></thead>
+          <tbody id="tbody-intraday"><tr><td colspan="12"><div class="empty"><div class="empty-icon">🎯</div><div class="empty-text">Scanner run karo</div></div></td></tr></tbody></table>
         </div>
       </div>
     </div>
@@ -511,7 +511,7 @@ function initCredentials() {
 }
 
 // ── SUPABASE FUNCTION CALL ──
-async function callFn(fnName, body) {
+async function callFn(fnName, body, timeoutMs = 20000) {
   let parsedUrl;
   try {
     parsedUrl = new URL(sbUrl);
@@ -528,7 +528,7 @@ async function callFn(fnName, body) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${sbUrl}/functions/v1/${fnName}`, {
@@ -554,7 +554,7 @@ async function callFn(fnName, body) {
     return data;
   } catch (err) {
     if (err?.name === 'AbortError') {
-      throw new Error('Request timed out (20s). Check network and try again.');
+      throw new Error(`Request timed out (${Math.round(timeoutMs / 1000)}s). Check network and try again.`);
     }
     if (String(err?.message || '').toLowerCase().includes('failed to fetch')) {
       throw new Error('Network/CORS blocked request. Check Supabase URL, browser extension/adblock, and internet.');
@@ -645,7 +645,8 @@ async function runScanner(type) {
   try {
     // 1. Get symbols
     const symParams = getSymParams(type);
-    const symData = await callFn('symbols', { ...symParams });
+    const timeoutMs = type === 'intraday' ? 60000 : 20000;
+    const symData = await callFn('symbols', { ...symParams }, timeoutMs);
     if (!symData.success) throw new Error(symData.message || 'Symbol fetch failed');
 
     const symbols = symData.symbols;
@@ -653,20 +654,20 @@ async function runScanner(type) {
     showAlert('alert-' + type, 'info', `📋 ${symbols.length} stocks mili — scan shuru...`);
 
     // 2. Batch scan (50 at a time)
-    const batchSize = 20;
+    const batchSize = type === 'intraday' ? 6 : 20;
     const allResults = [];
     const meta = { apiFailures: 0, noData: 0, sampleFailure: '' };
 
     for (let i = 0; i < symbols.length; i += batchSize) {
       if (!scanActive) break;
       const batch = symbols.slice(i, i + batchSize);
-      const fnName = 'scan-' + type;
+      const fnName = type === 'intraday' ? 'scan-volume' : ('scan-' + type);
       const params = getScanParams(type);
 
       const res = await callFn(fnName, {
         symbols: batch,
         params
-      });
+      }, timeoutMs);
 
       if (!res.success) {
         throw new Error(res.message || 'Scanner request failed');
@@ -755,8 +756,11 @@ function getScanParams(type) {
     p.breakout_vol  = parseFloat(document.getElementById('cup-brvol').value);
     p.min_price     = parseFloat(document.getElementById('pattern-minprice').value);
   } else if (type === 'intraday') {
-    p.vol_ratio_min = parseFloat(document.getElementById('intra-volratio').value);
-    p.min_volume    = parseInt(document.getElementById('intra-minvol').value);
+    p.timeframe     = 'D';
+    p.vol_ratio     = parseFloat(document.getElementById('intra-volratio').value);
+    p.avg_period    = 10;
+    p.min_avg_vol   = parseInt(document.getElementById('intra-minvol').value);
+    p.direction     = 'Any';
     p.first_hour_move = parseFloat(document.getElementById('intra-fh').value);
     p.atr_min       = parseFloat(document.getElementById('intra-atr').value);
     p.min_price     = parseFloat(document.getElementById('intra-minprice').value);
@@ -765,6 +769,7 @@ function getScanParams(type) {
     p.rsi_period    = 14;
     p.rsi_min       = parseFloat(document.getElementById('intra-rsimin').value);
     p.rsi_max       = parseFloat(document.getElementById('intra-rsimax').value);
+    p.auto_relax    = true;
   } else if (type === 'combo') {
     p.timeframe    = document.getElementById('combo-tf').value;
     p.min_signals  = parseInt(document.getElementById('combo-minsig').value);
@@ -805,7 +810,7 @@ function buildRow(type, r) {
     breakout: `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>₹${r.range_high}</td><td class="neu">₹${r.range_low}</td><td>${r.range_pct}%</td><td>${r.vol_ratio}x</td><td class="neu">₹${r.ema_21}</td><td>${r.rsi}</td><td><span class="badge ${String(r.signal || '').includes('BULL')?'badge-green':'badge-red'}">${r.signal || 'N/A'}</span></td>`,
     rsi:      `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>${r.rsi}</td><td><span class="badge badge-amber">${r.rsi_signal}</span></td><td class="neu">₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td class="neu" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;">${r.setup}</td>`,
     pattern:  `<td class="sym">${r.symbol}</td><td class="up">₹${r.cmp}</td><td><span class="badge badge-blue">${r.pattern}</span></td><td>₹${r.rim_resistance}</td><td class="neu">₹${r.handle_low}</td><td>₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td><span class="badge ${String(r.signal || '').includes('BREAKOUT')?'badge-green':'badge-amber'}">${r.signal}</span></td>`,
-    intraday: `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td class="${Math.abs(parseFloat(r.first_hour_pct))>=1.5?'up':'neu'}">${r.first_hour_pct}%</td><td>${r.gap_pct}%</td><td>${r.atr_pct}%</td><td>${r.vol_ratio}x</td><td>${r.rsi_15m}</td><td><span class="badge ${String(r.vwap_bias).includes('ABOVE')?'badge-green':'badge-red'}">${r.vwap_bias}</span></td><td>${r.market_cap_cr}</td><td><span class="badge ${r.signal==='LONG'?'badge-green':'badge-red'}">${r.signal}</span></td>`,
+    intraday: `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td class="${Math.abs(parseFloat(r.first_hour_pct ?? r.change_pct))>=1.5?'up':'neu'}">${(r.first_hour_pct ?? r.change_pct)}%</td><td>${(r.gap_pct ?? '0.00')}%</td><td>${(r.atr_pct ?? 'NA')}</td><td>${r.vol_ratio}x</td><td>${(r.rsi_15m ?? 'NA')}</td><td><span class="badge ${String(r.vwap_bias || (parseFloat(r.change_pct) >= 0 ? 'ABOVE VWAP' : 'BELOW VWAP')).includes('ABOVE')?'badge-green':'badge-red'}">${(r.vwap_bias || (parseFloat(r.change_pct) >= 0 ? 'ABOVE VWAP' : 'BELOW VWAP'))}</span></td><td>${(r.market_cap_cr ?? '-')}</td><td><span class="badge ${r.mode==='STRICT'?'badge-blue':'badge-amber'}">${r.mode || 'RELAXED'}</span></td><td><span class="badge ${(r.signal || (parseFloat(r.change_pct) >= 0 ? 'LONG' : 'SHORT'))==='LONG'?'badge-green':'badge-red'}">${(r.signal || (parseFloat(r.change_pct) >= 0 ? 'LONG' : 'SHORT'))}</span></td>`,
     combo:    `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td style="font-size:11px;max-width:160px">${r.signals}</td><td class="up">${r.score}</td><td class="neu">₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td>${r.rsi}</td><td class="up">₹${r.entry}</td><td class="dn">₹${r.sl}</td><td class="up">₹${r.target}</td>`,
   };
   return `<tr>${rows[type] || ''}</tr>`;
