@@ -499,6 +499,14 @@ let scanActive = false;
 const scanResults = {};
 const DEFAULT_SB_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co';
 const DEFAULT_SB_KEY = 'sb_publishable_RvP26Tv0JsvZkLGBvi8B5A_MycDvpbj';
+const INTRADAY_FO_SYMBOLS = [
+  'NSE:RELIANCE-EQ','NSE:HDFCBANK-EQ','NSE:ICICIBANK-EQ','NSE:SBIN-EQ','NSE:AXISBANK-EQ','NSE:KOTAKBANK-EQ',
+  'NSE:BAJFINANCE-EQ','NSE:BAJAJFINSV-EQ','NSE:INFY-EQ','NSE:TCS-EQ','NSE:WIPRO-EQ','NSE:HCLTECH-EQ',
+  'NSE:LT-EQ','NSE:MARUTI-EQ','NSE:M&M-EQ','NSE:TITAN-EQ','NSE:ADANIENT-EQ','NSE:ADANIPORTS-EQ',
+  'NSE:TATASTEEL-EQ','NSE:HINDALCO-EQ','NSE:JSWSTEEL-EQ','NSE:COALINDIA-EQ','NSE:ONGC-EQ','NSE:ULTRACEMCO-EQ',
+  'NSE:SUNPHARMA-EQ','NSE:ITC-EQ','NSE:BHARTIARTL-EQ','NSE:INDUSINDBK-EQ','NSE:TECHM-EQ','NSE:POWERGRID-EQ',
+  'NSE:NTPC-EQ','NSE:GRASIM-EQ','NSE:EICHERMOT-EQ','NSE:CIPLA-EQ','NSE:DRREDDY-EQ','NSE:VEDL-EQ','NSE:ULTRACEMCO-EQ'
+];
 
 function initCredentials() {
   const saved = {
@@ -646,10 +654,15 @@ async function runScanner(type) {
     // 1. Get symbols
     const symParams = getSymParams(type);
     const timeoutMs = type === 'intraday' ? 60000 : 20000;
-    const symData = await callFn('symbols', { ...symParams }, timeoutMs);
-    if (!symData.success) throw new Error(symData.message || 'Symbol fetch failed');
-
-    const symbols = symData.symbols;
+    let symbols = [];
+    if (type === 'intraday') {
+      const limit = Math.max(10, parseInt(document.getElementById('intra-limit')?.value || '300'));
+      symbols = INTRADAY_FO_SYMBOLS.slice(0, limit);
+    } else {
+      const symData = await callFn('symbols', { ...symParams }, timeoutMs);
+      if (!symData.success) throw new Error(symData.message || 'Symbol fetch failed');
+      symbols = symData.symbols;
+    }
     updateProgress(type, 0, symbols.length, 'Scanning...');
     showAlert('alert-' + type, 'info', `📋 ${symbols.length} stocks mili — scan shuru...`);
 
@@ -673,7 +686,27 @@ async function runScanner(type) {
         throw new Error(res.message || 'Scanner request failed');
       }
 
-      if (res.results) allResults.push(...res.results);
+      let batchResults = res.results || [];
+      if (type === 'intraday') {
+        batchResults = batchResults
+          .filter(r => {
+            const ltp = parseFloat(r.ltp || '0');
+            const chg = Math.abs(parseFloat(r.change_pct || '0'));
+            return ltp >= (params.min_price || 100) && ltp <= (params.max_price || 2500) && chg >= (params.first_hour_move || 1.5);
+          })
+          .map(r => ({
+            ...r,
+            first_hour_pct: r.change_pct,
+            gap_pct: '0.00',
+            atr_pct: r.atr_pct || 'NA',
+            rsi_15m: r.rsi_15m || 'NA',
+            vwap_bias: parseFloat(r.change_pct || '0') >= 0 ? 'ABOVE VWAP' : 'BELOW VWAP',
+            market_cap_cr: r.market_cap_cr || '-',
+            signal: parseFloat(r.change_pct || '0') >= 0 ? 'LONG' : 'SHORT',
+            mode: 'RELAXED'
+          }));
+      }
+      allResults.push(...batchResults);
       if (res.meta) {
         meta.apiFailures += Number(res.meta.api_failures || 0);
         meta.noData += Number(res.meta.no_data_skipped || 0);
@@ -682,6 +715,35 @@ async function runScanner(type) {
       updateProgress(type, Math.min(i + batchSize, symbols.length), symbols.length, 'Scanning...');
 
       // Update table progressively
+      scanResults[type] = allResults;
+      renderTable(type, allResults);
+    }
+
+    if (type === 'intraday' && !allResults.length) {
+      showAlert('alert-intraday', 'info', 'No strict matches, running relaxed pass...');
+      const relaxed = { ...params, vol_ratio: Math.max(1.2, (params.vol_ratio || 2) * 0.7), min_last_vol: Math.max(1500000, Math.floor((params.min_last_vol || 5000000) * 0.5)), first_hour_move: Math.max(0.8, (params.first_hour_move || 1.5) * 0.6) };
+      for (let i = 0; i < symbols.length; i += batchSize) {
+        const batch = symbols.slice(i, i + batchSize);
+        const res = await callFn(fnName, { symbols: batch, params: relaxed }, timeoutMs);
+        const relaxedRows = (res.results || [])
+          .filter(r => {
+            const ltp = parseFloat(r.ltp || '0');
+            const chg = Math.abs(parseFloat(r.change_pct || '0'));
+            return ltp >= (params.min_price || 100) && ltp <= (params.max_price || 2500) && chg >= relaxed.first_hour_move;
+          })
+          .map(r => ({
+            ...r,
+            first_hour_pct: r.change_pct,
+            gap_pct: '0.00',
+            atr_pct: r.atr_pct || 'NA',
+            rsi_15m: r.rsi_15m || 'NA',
+            vwap_bias: parseFloat(r.change_pct || '0') >= 0 ? 'ABOVE VWAP' : 'BELOW VWAP',
+            market_cap_cr: r.market_cap_cr || '-',
+            signal: parseFloat(r.change_pct || '0') >= 0 ? 'LONG' : 'SHORT',
+            mode: 'RELAXED'
+          }));
+        allResults.push(...relaxedRows);
+      }
       scanResults[type] = allResults;
       renderTable(type, allResults);
     }
@@ -759,7 +821,8 @@ function getScanParams(type) {
     p.timeframe     = 'D';
     p.vol_ratio     = parseFloat(document.getElementById('intra-volratio').value);
     p.avg_period    = 10;
-    p.min_avg_vol   = parseInt(document.getElementById('intra-minvol').value);
+    p.min_avg_vol   = 100000;
+    p.min_last_vol  = parseInt(document.getElementById('intra-minvol').value);
     p.direction     = 'Any';
     p.first_hour_move = parseFloat(document.getElementById('intra-fh').value);
     p.atr_min       = parseFloat(document.getElementById('intra-atr').value);

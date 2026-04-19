@@ -19,7 +19,7 @@ serve(async (req) => {
       });
     }
 
-    const { timeframe = "D", vol_ratio = 2, avg_period = 20, min_price = 20, min_avg_vol = 100000, direction = "Any" } = params;
+    const { timeframe = "D", vol_ratio = 2, avg_period = 20, min_price = 20, min_avg_vol = 100000, min_last_vol = 0, direction = "Any" } = params;
 
     const results: object[] = [];
     let apiFailures = 0;
@@ -62,6 +62,7 @@ serve(async (req) => {
 
         if (ltp < min_price) continue;
         if (avgVol < min_avg_vol) continue;
+        if (lastVol < min_last_vol) continue;
         if (ratio < vol_ratio) continue;
         if (direction === "Bullish" && chgPct < 0) continue;
         if (direction === "Bearish" && chgPct >= 0) continue;
