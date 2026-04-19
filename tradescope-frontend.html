@@ -165,9 +165,11 @@ tbody td { padding:10px 12px; white-space:nowrap; }
     <div class="nav-item" onclick="showPage('volume')"><span class="ic">📊</span> Volume Surge <span class="nav-badge">HOT</span></div>
     <div class="nav-item" onclick="showPage('ema')"><span class="ic">📈</span> EMA Scanner</div>
     <div class="nav-item" onclick="showPage('breakout')"><span class="ic">🚀</span> Breakout</div>
+    <div class="nav-item" onclick="openPatternPage('cup_handle')"><span class="ic">☕</span> Cup & Handle</div>
+    <div class="nav-item" onclick="openPatternPage('head_shoulders')"><span class="ic">🔻</span> H&S Pattern</div>
+    <div class="nav-item" onclick="openPatternPage('wm_pattern')"><span class="ic">〽️</span> W / M Pattern</div>
     <div class="nav-item" onclick="showPage('rsi')"><span class="ic">⚡</span> RSI Scanner</div>
-    <div class="nav-item" onclick="showPage('pattern')"><span class="ic">☕</span> Pattern Scanner</div>
-    <div class="nav-item" onclick="showPage('combo')"><span class="ic">🎯</span> Combo <span class="nav-badge">NEW</span></div>
+    <div class="nav-item" onclick="showPage('combo')"><span class="ic">🎯</span> Combo (All) <span class="nav-badge">NEW</span></div>
   </div>
 
   <!-- ── CONTENT ── -->
@@ -377,7 +379,7 @@ supabase functions deploy scan-combo
     <!-- ══ PATTERN ══ -->
     <div class="page" id="page-pattern">
       <div class="page-hdr">
-        <div><div class="page-title">Pattern Scanner</div><div class="page-desc">Cup & Handle, H&S, W/M on weekly timeframe</div></div>
+        <div><div class="page-title" id="pattern-page-title">Pattern Scanner</div><div class="page-desc">Cup & Handle, H&S, W/M on weekly timeframe</div></div>
         <button class="btn btn-outline btn-sm" onclick="exportCSV('pattern')">↓ Export CSV</button>
       </div>
       <div class="card">
@@ -491,6 +493,22 @@ function showPage(name) {
   if (window.innerWidth <= 700) {
     document.getElementById('sidebarNav')?.classList.remove('open');
   }
+}
+
+function openPatternPage(patternType) {
+  const sel = document.getElementById('pattern-type');
+  if (sel) sel.value = patternType;
+
+  const map = {
+    cup_handle: 'Cup & Handle',
+    head_shoulders: 'H&S Pattern',
+    wm_pattern: 'W / M Pattern',
+  };
+
+  const title = document.getElementById('pattern-page-title');
+  if (title) title.textContent = map[patternType] || 'Pattern Scanner';
+
+  showPage('pattern');
 }
 
 function toggleMobileNav() {
