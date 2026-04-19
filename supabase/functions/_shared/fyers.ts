@@ -11,10 +11,11 @@ export async function getHistoricalData(
   symbol: string,
   resolution: string,
   appId: string,
-  token: string
+  token: string,
+  lookbackDays = 365
 ) {
   const to = Math.floor(Date.now() / 1000);
-  const from = to - 365 * 24 * 3600;
+  const from = to - lookbackDays * 24 * 3600;
   const encodedSymbol = encodeURIComponent(symbol);
   const encodedResolution = encodeURIComponent(resolution);
   const url = `https://api-t1.fyers.in/data/history?symbol=${encodedSymbol}&resolution=${encodedResolution}&date_format=0&range_from=${from}&range_to=${to}&cont_flag=1`;

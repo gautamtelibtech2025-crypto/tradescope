@@ -20,7 +20,7 @@ serve(async (req) => {
     }
 
     const {
-      timeframe = "D",
+      timeframe = "60",
       rsi_period = 14,
       setup_type = "RSI above 60 (Momentum)",
       rsi_min = 40,
@@ -28,13 +28,26 @@ serve(async (req) => {
       vol_filter = "Any",
       min_price = 20,
     } = params;
+    const lookbackDays = timeframe === "W" ? 3650 : timeframe === "D" ? 1460 : 180;
 
     const results: object[] = [];
+    let apiFailures = 0;
+    let noDataCount = 0;
+    let sampleFailure = "";
 
     for (const sym of symbols) {
       try {
-        const data = await getHistoricalData(sym, timeframe, app_id, access_token);
-        if (data.s !== "ok" || !data.candles?.length) continue;
+        const data = await getHistoricalData(sym, timeframe, app_id, access_token, lookbackDays);
+        if (data.s !== "ok" || !data.candles?.length) {
+          const msg = String(data?.message || data?.s || "").toLowerCase();
+          if (msg.includes("no_data") || msg.includes("no data")) {
+            noDataCount += 1;
+            continue;
+          }
+          apiFailures += 1;
+          if (!sampleFailure) sampleFailure = `${sym}: ${data?.message || data?.s || "No candles"}`;
+          continue;
+        }
 
         const candles: number[][] = data.candles;
         if (candles.length < Math.max(rsi_period + 5, 30)) continue;
@@ -118,11 +131,24 @@ serve(async (req) => {
           vol_ratio: volRatio,
           setup: setup_type,
         });
-      } catch (_) { continue; }
+      } catch (err) {
+        apiFailures += 1;
+        if (!sampleFailure) sampleFailure = `${sym}: ${err instanceof Error ? err.message : String(err)}`;
+        continue;
+      }
       finally { await sleep(250); }
     }
 
-    return new Response(JSON.stringify({ success: true, results, count: results.length }), {
+    return new Response(JSON.stringify({
+      success: true,
+      results,
+      count: results.length,
+      meta: {
+        api_failures: apiFailures,
+        no_data_skipped: noDataCount,
+        sample_failure: sampleFailure,
+      },
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

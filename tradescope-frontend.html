@@ -216,6 +216,7 @@ supabase functions deploy scan-volume<br>
 supabase functions deploy scan-ema<br>
 supabase functions deploy scan-breakout<br>
 supabase functions deploy scan-rsi<br>
+supabase functions deploy scan-pattern<br>
 supabase functions deploy scan-combo
           </div>
         </div>
@@ -347,7 +348,7 @@ supabase functions deploy scan-combo
       <div class="card">
         <div class="config-grid">
           <div><label class="lbl">Exchange</label><select class="inp" id="rsi-exchange"><option>NSE</option><option>BSE</option></select></div>
-          <div><label class="lbl">Timeframe</label><select class="inp" id="rsi-tf"><option value="D">Daily</option><option value="W">Weekly</option><option value="60">60 Min</option></select></div>
+          <div><label class="lbl">Timeframe</label><select class="inp" id="rsi-tf"><option value="15">15 Min</option><option value="60" selected>60 Min</option><option value="D">Daily</option><option value="W">Weekly</option></select></div>
           <div><label class="lbl">RSI Period</label><input type="number" class="inp" id="rsi-period" value="14"></div>
           <div><label class="lbl">Setup Type</label><select class="inp" id="rsi-setup">
             <option>Bullish Divergence</option><option>Bearish Divergence</option>
@@ -386,7 +387,7 @@ supabase functions deploy scan-combo
         <div class="config-grid">
           <div><label class="lbl">Pattern</label><select class="inp" id="pattern-type"><option value="cup_handle">☕ Cup & Handle</option><option value="head_shoulders">🔻 H&S Pattern</option><option value="wm_pattern">〽️ W / M Pattern</option></select></div>
           <div><label class="lbl">Exchange</label><select class="inp" id="pattern-exchange"><option>NSE</option></select></div>
-          <div><label class="lbl">Timeframe</label><select class="inp" id="pattern-tf"><option value="W">Weekly</option></select></div>
+          <div><label class="lbl">Timeframe</label><select class="inp" id="pattern-tf"><option value="D" selected>Daily</option><option value="W">Weekly</option><option value="60">60 Min</option></select></div>
           <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="pattern-limit" value="1200" min="100"></div>
           <div><label class="lbl">Rim Tolerance %</label><input type="number" class="inp" id="cup-rimtol" value="5" step="0.5"></div>
           <div><label class="lbl">EMA Touch Dist %</label><input type="number" class="inp" id="cup-touch" value="2" step="0.1"></div>
@@ -571,6 +572,7 @@ async function runScanner(type) {
     // 2. Batch scan (50 at a time)
     const batchSize = 20;
     const allResults = [];
+    const meta = { apiFailures: 0, noData: 0, sampleFailure: '' };
 
     for (let i = 0; i < symbols.length; i += batchSize) {
       if (!scanActive) break;
@@ -588,6 +590,11 @@ async function runScanner(type) {
       }
 
       if (res.results) allResults.push(...res.results);
+      if (res.meta) {
+        meta.apiFailures += Number(res.meta.api_failures || 0);
+        meta.noData += Number(res.meta.no_data_skipped || 0);
+        if (!meta.sampleFailure && res.meta.sample_failure) meta.sampleFailure = String(res.meta.sample_failure);
+      }
       updateProgress(type, Math.min(i + batchSize, symbols.length), symbols.length, 'Scanning...');
 
       // Update table progressively
@@ -596,7 +603,13 @@ async function runScanner(type) {
     }
 
     showProgress(type, false);
-    showAlert('alert-' + type, 'ok', `✓ Scan complete — ${allResults.length} signals mili ${symbols.length} stocks mein`);
+    if (!allResults.length && (meta.apiFailures || meta.noData)) {
+      const reason = `No-data: ${meta.noData}, API-fail: ${meta.apiFailures}`;
+      const hint = meta.sampleFailure ? ` | Sample: ${meta.sampleFailure}` : '';
+      showAlert('alert-' + type, 'err', `⚠ Signals 0. ${reason}${hint}`);
+    } else {
+      showAlert('alert-' + type, 'ok', `✓ Scan complete — ${allResults.length} signals mili ${symbols.length} stocks mein`);
+    }
     updateStats(type, symbols.length, allResults);
   } catch (e) {
     showAlert('alert-' + type, 'err', '✗ Error: ' + e.message);

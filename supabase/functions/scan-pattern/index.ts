@@ -17,7 +17,7 @@ type PatternHit = {
 };
 
 function detectCupHandle(symbol: string, candles: number[][], params: any): PatternHit | null {
-  if (candles.length < 70) return null;
+  if (candles.length < 60) return null;
 
   const closes = candles.map((c) => c[4]);
   const highs = candles.map((c) => c[2]);
@@ -73,7 +73,7 @@ function detectCupHandle(symbol: string, candles: number[][], params: any): Patt
       const cupLowIdx = lows.indexOf(cupLow, leftRimIdx);
       const rimRef = Math.min(leftRim, rightRim);
       const cupDepth = (rimRef - cupLow) / rimRef;
-      if (cupDepth < 0.2 || cupDepth > 0.5) continue;
+      if (cupDepth < 0.08 || cupDepth > 0.5) continue;
 
       const cupSpan = rightRimIdx - leftRimIdx;
       if (cupLowIdx - leftRimIdx < Math.floor(cupSpan * 0.2)) continue;
@@ -84,18 +84,18 @@ function detectCupHandle(symbol: string, candles: number[][], params: any): Patt
       if (!(cupLow < leftQuarter * 0.95 && cupLow < rightQuarter * 0.95)) continue;
 
       const handleRetrace = (rightRim - handleLow) / rightRim;
-      if (handleRetrace < 0.1 || handleRetrace > 0.3) continue;
+      if (handleRetrace < 0.03 || handleRetrace > 0.35) continue;
 
-      const cupUpperHalf = cupLow + (rimRef - cupLow) / 2;
-      if (handleLow < cupUpperHalf) continue;
-      if (handleAvgVol >= avg20Vol) continue;
+      const cupUpperThird = cupLow + (rimRef - cupLow) / 3;
+      if (handleLow < cupUpperThird) continue;
+      if (handleAvgVol > avg20Vol * 1.3) continue;
 
       const leftHalfVol = avg(vols.slice(leftRimIdx, cupLowIdx + 1));
       const bottomBandVol = avg(vols.slice(Math.max(leftRimIdx, cupLowIdx - 2), Math.min(rightRimIdx + 1, cupLowIdx + 3)));
       if (!(leftHalfVol > bottomBandVol)) continue;
 
-      const breakoutVol = params.breakout_vol ?? 1.5;
-      const breakout = ltp > rightRim * 1.002 && volRatio >= breakoutVol;
+      const breakoutVol = params.breakout_vol ?? 1.2;
+      const breakout = ltp > rightRim * 1.001 && volRatio >= breakoutVol;
       const preBreakout = !breakout && ltp >= handleLow && emaDistPct <= touchDist;
       if (!(breakout || preBreakout)) continue;
 
@@ -116,7 +116,7 @@ function detectCupHandle(symbol: string, candles: number[][], params: any): Patt
 }
 
 function detectHeadShoulders(symbol: string, candles: number[][], params: any): PatternHit | null {
-  if (candles.length < 70) return null;
+  if (candles.length < 55) return null;
   const closes = candles.map((c) => c[4]);
   const highs = candles.map((c) => c[2]);
   const lows = candles.map((c) => c[3]);
@@ -134,8 +134,8 @@ function detectHeadShoulders(symbol: string, candles: number[][], params: any): 
   for (let i = 0; i < pivots.length - 2; i++) {
     const p1 = pivots[i], p2 = pivots[i + 1], p3 = pivots[i + 2];
     const h1 = highs[p1], h2 = highs[p2], h3 = highs[p3];
-    if (!(h2 > h1 * 1.03 && h2 > h3 * 1.03)) continue;
-    if (Math.abs(h1 - h3) / Math.max(h1, h3) > 0.08) continue;
+    if (!(h2 > h1 * 1.02 && h2 > h3 * 1.02)) continue;
+    if (Math.abs(h1 - h3) / Math.max(h1, h3) > 0.12) continue;
 
     const neck1 = Math.min(...lows.slice(p1, p2 + 1));
     const neck2 = Math.min(...lows.slice(p2, p3 + 1));
@@ -164,7 +164,7 @@ function detectHeadShoulders(symbol: string, candles: number[][], params: any): 
 }
 
 function detectWMPattern(symbol: string, candles: number[][], params: any): PatternHit | null {
-  if (candles.length < 60) return null;
+  if (candles.length < 45) return null;
 
   const closes = candles.map((c) => c[4]);
   const highs = candles.map((c) => c[2]);
@@ -245,15 +245,28 @@ serve(async (req) => {
     }
 
     const { symbols = [], params = {} } = body;
-    const timeframe = params.timeframe || "W";
+    const timeframe = params.timeframe || "D";
     const patternType = params.pattern_type || "cup_handle";
+    const lookbackDays = timeframe === "W" ? 3650 : timeframe === "D" ? 1460 : 120;
 
     const results: PatternHit[] = [];
+    let apiFailures = 0;
+    let noDataCount = 0;
+    let sampleFailure = "";
 
     for (const sym of symbols) {
       try {
-        const data = await getHistoricalData(sym, timeframe, app_id, access_token);
-        if (data.s !== "ok" || !data.candles?.length) continue;
+        const data = await getHistoricalData(sym, timeframe, app_id, access_token, lookbackDays);
+        if (data.s !== "ok" || !data.candles?.length) {
+          const msg = String(data?.message || data?.s || "").toLowerCase();
+          if (msg.includes("no_data") || msg.includes("no data")) {
+            noDataCount += 1;
+            continue;
+          }
+          apiFailures += 1;
+          if (!sampleFailure) sampleFailure = `${sym}: ${data?.message || data?.s || "No candles"}`;
+          continue;
+        }
 
         const formatted = String(sym).replace("NSE:", "").replace("BSE:", "").replace("-EQ", "");
 
@@ -264,14 +277,25 @@ serve(async (req) => {
 
         if (hit) results.push(hit);
         await sleep(200);
-      } catch {
+      } catch (err) {
+        apiFailures += 1;
+        if (!sampleFailure) sampleFailure = `${sym}: ${err instanceof Error ? err.message : String(err)}`;
         continue;
       }
     }
 
     results.sort((a, b) => parseFloat(b.vol_ratio) - parseFloat(a.vol_ratio));
 
-    return new Response(JSON.stringify({ success: true, results, count: results.length }), {
+    return new Response(JSON.stringify({
+      success: true,
+      results,
+      count: results.length,
+      meta: {
+        api_failures: apiFailures,
+        no_data_skipped: noDataCount,
+        sample_failure: sampleFailure,
+      },
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

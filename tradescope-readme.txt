@@ -74,6 +74,7 @@ supabase functions deploy scan-volume
 supabase functions deploy scan-ema
 supabase functions deploy scan-breakout
 supabase functions deploy scan-rsi
+supabase functions deploy scan-pattern
 supabase functions deploy scan-combo
 ```
 
