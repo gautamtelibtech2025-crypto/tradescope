@@ -662,6 +662,10 @@ async function runScanner(type) {
       const symData = await callFn('symbols', { ...symParams }, timeoutMs);
       if (!symData.success) throw new Error(symData.message || 'Symbol fetch failed');
       symbols = symData.symbols;
+      if (type === 'rsi' && symParams.exchange === 'NSE') {
+        const reliable = symbols.filter((s) => /^NSE:[A-Z][A-Z0-9&-]{1,24}-EQ$/.test(String(s)));
+        symbols = (reliable.length ? reliable : INTRADAY_FO_SYMBOLS).slice(0, symParams.limit || 120);
+      }
     }
     updateProgress(type, 0, symbols.length, 'Scanning...');
     showAlert('alert-' + type, 'info', `📋 ${symbols.length} stocks mili — scan shuru...`);
