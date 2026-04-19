@@ -25,6 +25,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:#f9fafb; color
 .btn-outline:hover { background:#f3f4f6; }
 .btn-sm { padding:5px 12px; font-size:12px; }
 .btn-red { background:#dc2626; color:#fff; }
+.nav-toggle { display:none; min-width:36px; padding:5px 10px; }
 
 /* LAYOUT */
 .layout { display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 52px); }
@@ -106,27 +107,30 @@ tbody td { padding:10px 12px; white-space:nowrap; }
 
 @media(max-width:700px) {
   .layout { grid-template-columns:1fr; }
+  .nav-toggle { display:inline-block; }
   .sidebar {
-    display:block;
+    display:none;
     border-right:none;
     border-bottom:1px solid #e5e7eb;
     padding:8px;
-    white-space:nowrap;
-    overflow-x:auto;
+    white-space:normal;
+    overflow-x:visible;
   }
-  .nav-section { display:none; }
+  .sidebar.open {
+    display:block;
+  }
+  .nav-section { display:block; padding:8px 10px 4px; }
   .nav-item {
-    display:inline-flex;
-    border-left:none;
-    border-bottom:2px solid transparent;
+    display:flex;
+    border-left:3px solid transparent;
     border-radius:6px;
-    margin-right:6px;
+    margin-right:0;
+    margin-bottom:4px;
     padding:8px 10px;
     font-size:12px;
   }
   .nav-item.active {
-    border-left:none;
-    border-bottom-color:#1d4ed8;
+    border-left:3px solid #1d4ed8;
   }
   .nav-item .ic { width:auto; }
   .nav-badge { margin-left:6px; }
@@ -142,6 +146,7 @@ tbody td { padding:10px 12px; white-space:nowrap; }
 <div class="topbar">
   <div class="logo">Trade<span>Scope</span></div>
   <div class="top-right">
+    <button class="btn btn-outline btn-sm nav-toggle" onclick="toggleMobileNav()">☰</button>
     <div class="status-badge">
       <div class="dot" id="statusDot"></div>
       <span id="statusText">Not Connected</span>
@@ -152,7 +157,7 @@ tbody td { padding:10px 12px; white-space:nowrap; }
 
 <div class="layout">
   <!-- ── SIDEBAR ── -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebarNav">
     <div class="nav-section">Setup</div>
     <div class="nav-item active" onclick="showPage('setup')"><span class="ic">⚙️</span> API Setup</div>
 
@@ -448,6 +453,16 @@ function showPage(name) {
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.getAttribute('onclick')?.includes("'" + name + "'")) n.classList.add('active');
   });
+
+  if (window.innerWidth <= 700) {
+    document.getElementById('sidebarNav')?.classList.remove('open');
+  }
+}
+
+function toggleMobileNav() {
+  const nav = document.getElementById('sidebarNav');
+  if (!nav) return;
+  nav.classList.toggle('open');
 }
 
 // ── CONNECT ──
