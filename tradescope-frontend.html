@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TradeScope — NSE/BSE Scanner</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:system-ui,-apple-system,sans-serif; background:#f9fafb; color:#111; font-size:14px; }
+
+/* TOPBAR */
+.topbar { background:#fff; border-bottom:1px solid #e5e7eb; padding:0 24px; height:52px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; }
+.logo { font-size:18px; font-weight:700; color:#1d4ed8; }
+.logo span { color:#111; }
+.top-right { display:flex; align-items:center; gap:12px; }
+.status-badge { display:flex; align-items:center; gap:6px; font-size:12px; color:#6b7280; }
+.dot { width:8px; height:8px; border-radius:50%; background:#d1d5db; }
+.dot.live { background:#16a34a; animation:blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+.btn { padding:7px 16px; border-radius:6px; border:none; cursor:pointer; font-size:13px; font-weight:500; transition:all .15s; }
+.btn-primary { background:#1d4ed8; color:#fff; }
+.btn-primary:hover { background:#1e40af; }
+.btn-primary:disabled { background:#93c5fd; cursor:not-allowed; }
+.btn-outline { background:#fff; color:#374151; border:1px solid #d1d5db; }
+.btn-outline:hover { background:#f3f4f6; }
+.btn-sm { padding:5px 12px; font-size:12px; }
+.btn-red { background:#dc2626; color:#fff; }
+
+/* LAYOUT */
+.layout { display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 52px); }
+.sidebar { background:#fff; border-right:1px solid #e5e7eb; padding:16px 0; }
+.nav-section { padding:10px 16px 4px; font-size:10px; font-weight:600; color:#9ca3af; letter-spacing:.8px; text-transform:uppercase; }
+.nav-item { display:flex; align-items:center; gap:10px; padding:9px 16px; cursor:pointer; color:#4b5563; font-size:13px; font-weight:500; border-left:3px solid transparent; }
+.nav-item:hover { background:#f3f4f6; color:#111; }
+.nav-item.active { background:#eff6ff; color:#1d4ed8; border-left-color:#1d4ed8; }
+.nav-item .ic { width:18px; text-align:center; }
+.nav-badge { margin-left:auto; background:#dbeafe; color:#1d4ed8; font-size:10px; padding:1px 7px; border-radius:10px; font-weight:600; }
+
+/* CONTENT */
+.content { padding:24px; }
+.page { display:none; }
+.page.active { display:block; }
+.page-hdr { margin-bottom:20px; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; }
+.page-title { font-size:20px; font-weight:700; }
+.page-desc { color:#6b7280; font-size:13px; margin-top:3px; }
+
+/* CARD */
+.card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:16px; }
+.config-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:12px; margin-bottom:16px; }
+.lbl { display:block; font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px; text-transform:uppercase; letter-spacing:.4px; }
+.inp { width:100%; border:1px solid #d1d5db; border-radius:5px; padding:7px 10px; font-size:13px; color:#111; outline:none; background:#fff; }
+.inp:focus { border-color:#1d4ed8; box-shadow:0 0 0 3px rgba(29,78,216,.08); }
+
+/* PROGRESS */
+.progress-wrap { display:none; margin-top:14px; }
+.progress-wrap.show { display:block; }
+.progress-lbl { display:flex; justify-content:space-between; font-size:12px; color:#6b7280; margin-bottom:5px; }
+.progress-bar { height:5px; background:#e5e7eb; border-radius:3px; overflow:hidden; }
+.progress-fill { height:100%; background:#1d4ed8; border-radius:3px; transition:width .3s; width:0; }
+
+/* ALERT */
+.alert { display:none; padding:10px 14px; border-radius:6px; font-size:12px; margin-top:12px; }
+.alert.show { display:flex; gap:8px; align-items:center; }
+.alert-err  { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+.alert-ok   { background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; }
+.alert-info { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+
+/* STATS */
+.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+.stat-box { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:14px; text-align:center; }
+.stat-val { font-size:26px; font-weight:700; color:#1d4ed8; }
+.stat-lbl { font-size:11px; color:#6b7280; margin-top:2px; }
+
+/* TABLE */
+.table-wrap { overflow-x:auto; }
+.results-hdr { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid #e5e7eb; background:#f9fafb; border-radius:8px 8px 0 0; }
+.results-title { font-size:12px; font-weight:600; color:#374151; }
+.results-count { background:#dbeafe; color:#1d4ed8; font-size:11px; font-weight:600; padding:2px 10px; border-radius:10px; }
+.results-wrap { border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; background:#fff; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+thead th { padding:9px 12px; font-size:10px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:.4px; background:#f9fafb; border-bottom:1px solid #e5e7eb; white-space:nowrap; text-align:left; cursor:pointer; }
+thead th:hover { color:#111; }
+tbody tr { border-bottom:1px solid #f3f4f6; }
+tbody tr:hover { background:#f9fafb; }
+tbody td { padding:10px 12px; white-space:nowrap; }
+.sym { font-weight:600; color:#111; }
+.up  { color:#16a34a; }
+.dn  { color:#dc2626; }
+.neu { color:#6b7280; }
+.badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; }
+.badge-green { background:#dcfce7; color:#16a34a; }
+.badge-red   { background:#fee2e2; color:#dc2626; }
+.badge-blue  { background:#dbeafe; color:#1d4ed8; }
+.badge-amber { background:#fef3c7; color:#b45309; }
+.empty { text-align:center; padding:48px; color:#9ca3af; }
+.empty-icon { font-size:32px; margin-bottom:8px; }
+.empty-text { font-size:13px; }
+
+/* SETUP PAGE */
+.setup-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.step-list { list-style:none; }
+.step-list li { display:flex; gap:10px; padding:8px 0; border-bottom:1px solid #f3f4f6; font-size:13px; color:#4b5563; }
+.step-list li:last-child { border:none; }
+.step-n { width:22px; height:22px; border-radius:50%; background:#dbeafe; color:#1d4ed8; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.code-box { background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; padding:12px 14px; font-family:monospace; font-size:12px; color:#374151; margin-top:10px; line-height:1.8; }
+
+@media(max-width:700px) {
+  .layout { grid-template-columns:1fr; }
+  .sidebar { display:none; }
+  .stats-row { grid-template-columns:1fr 1fr; }
+  .setup-grid { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<div class="topbar">
+  <div class="logo">Trade<span>Scope</span></div>
+  <div class="top-right">
+    <div class="status-badge">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Not Connected</span>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="showPage('setup')">⚙ Setup</button>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- ── SIDEBAR ── -->
+  <div class="sidebar">
+    <div class="nav-section">Setup</div>
+    <div class="nav-item active" onclick="showPage('setup')"><span class="ic">⚙️</span> API Setup</div>
+
+    <div class="nav-section">Scanners</div>
+    <div class="nav-item" onclick="showPage('volume')"><span class="ic">📊</span> Volume Surge <span class="nav-badge">HOT</span></div>
+    <div class="nav-item" onclick="showPage('ema')"><span class="ic">📈</span> EMA Scanner</div>
+    <div class="nav-item" onclick="showPage('breakout')"><span class="ic">🚀</span> Breakout</div>
+    <div class="nav-item" onclick="showPage('rsi')"><span class="ic">⚡</span> RSI Scanner</div>
+    <div class="nav-item" onclick="showPage('combo')"><span class="ic">🎯</span> Combo <span class="nav-badge">NEW</span></div>
+  </div>
+
+  <!-- ── CONTENT ── -->
+  <div class="content">
+
+    <!-- ══ SETUP ══ -->
+    <div class="page active" id="page-setup">
+      <div class="page-hdr">
+        <div><div class="page-title">API Setup</div><div class="page-desc">Supabase + Fyers se connect karo</div></div>
+      </div>
+      <div class="setup-grid">
+        <div class="card">
+          <div style="font-weight:600;margin-bottom:14px;">🔑 Credentials</div>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div>
+              <label class="lbl">Supabase Project URL</label>
+              <input class="inp" id="sbUrl" placeholder="https://xxxx.supabase.co">
+            </div>
+            <div>
+              <label class="lbl">Supabase Anon Key</label>
+              <input class="inp" id="sbKey" placeholder="eyJhbGciOiJIUzI1NiIs...">
+            </div>
+            <button class="btn btn-primary" onclick="connectApp()">⚡ Connect</button>
+            <div class="alert" id="connectAlert"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:600;margin-bottom:12px;">📋 Setup Steps</div>
+          <ul class="step-list">
+            <li><span class="step-n">1</span>supabase.com pe free account banao</li>
+            <li><span class="step-n">2</span>New project create karo</li>
+            <li><span class="step-n">3</span>Neeche diye commands run karo (README dekho)</li>
+            <li><span class="step-n">4</span>Project URL + Anon Key copy karo Settings se</li>
+            <li><span class="step-n">5</span>Server pe FYERS secrets set karo (admin only)</li>
+            <li><span class="step-n">6</span>End users ko sirf Connect dabana hoga</li>
+          </ul>
+          <div class="code-box">
+supabase login<br>
+supabase link --project-ref YOUR_REF<br>
+supabase functions deploy connect<br>
+supabase functions deploy symbols<br>
+supabase functions deploy scan-volume<br>
+supabase functions deploy scan-ema<br>
+supabase functions deploy scan-breakout<br>
+supabase functions deploy scan-rsi<br>
+supabase functions deploy scan-combo
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ VOLUME ══ -->
+    <div class="page" id="page-volume">
+      <div class="page-hdr">
+        <div><div class="page-title">Volume Surge</div><div class="page-desc">Unusual volume wale stocks — early move ka signal</div></div>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV('volume')">↓ Export CSV</button>
+      </div>
+      <div class="card">
+        <div class="config-grid">
+          <div><label class="lbl">Exchange</label><select class="inp" id="vol-exchange"><option>NSE</option><option>BSE</option><option>NSE+BSE</option></select></div>
+          <div><label class="lbl">Timeframe</label><select class="inp" id="vol-tf"><option value="D">Daily</option><option value="W">Weekly</option><option value="60">60 Min</option><option value="15">15 Min</option></select></div>
+          <div><label class="lbl">Volume Ratio (x)</label><input type="number" class="inp" id="vol-ratio" value="2" min="1" step="0.5"></div>
+          <div><label class="lbl">Avg Period</label><input type="number" class="inp" id="vol-period" value="20"></div>
+          <div><label class="lbl">Min Price ₹</label><input type="number" class="inp" id="vol-minprice" value="20"></div>
+          <div><label class="lbl">Min Avg Volume</label><input type="number" class="inp" id="vol-minvol" value="100000"></div>
+          <div><label class="lbl">Direction</label><select class="inp" id="vol-dir"><option>Any</option><option>Bullish</option><option>Bearish</option></select></div>
+          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="vol-limit" value="200"></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-volume" onclick="runScanner('volume')">▶ Run Scanner</button>
+          <button class="btn btn-outline btn-sm" onclick="stopScan()">■ Stop</button>
+        </div>
+        <div class="progress-wrap" id="progress-volume">
+          <div class="progress-lbl"><span id="ptxt-volume">Scanning...</span><span id="ppct-volume">0%</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="pfill-volume"></div></div>
+        </div>
+        <div class="alert" id="alert-volume"></div>
+      </div>
+      <div id="stats-volume" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-box"><div class="stat-val" id="sv-scanned">0</div><div class="stat-lbl">Scanned</div></div>
+          <div class="stat-box"><div class="stat-val" id="sv-found">0</div><div class="stat-lbl">Signals</div></div>
+          <div class="stat-box"><div class="stat-val" id="sv-bull">0</div><div class="stat-lbl">Bullish</div></div>
+          <div class="stat-box"><div class="stat-val" id="sv-bear">0</div><div class="stat-lbl">Bearish</div></div>
+        </div>
+      </div>
+      <div class="results-wrap">
+        <div class="results-hdr"><span class="results-title">VOLUME SURGE RESULTS</span><span class="results-count" id="count-volume">0 Signals</span></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>Volume</th><th>Avg Vol</th><th>Ratio</th><th>Signal</th><th>52W High</th><th>52W Low</th></tr></thead>
+          <tbody id="tbody-volume"><tr><td colspan="9"><div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Scanner run karo</div></div></td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ EMA ══ -->
+    <div class="page" id="page-ema">
+      <div class="page-hdr">
+        <div><div class="page-title">EMA Scanner</div><div class="page-desc">Key EMA levels pe stocks — 9, 21, 50, 200</div></div>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV('ema')">↓ Export CSV</button>
+      </div>
+      <div class="card">
+        <div class="config-grid">
+          <div><label class="lbl">Exchange</label><select class="inp" id="ema-exchange"><option>NSE</option><option>BSE</option></select></div>
+          <div><label class="lbl">Timeframe</label><select class="inp" id="ema-tf"><option value="D">Daily</option><option value="W">Weekly</option><option value="60">60 Min</option></select></div>
+          <div><label class="lbl">EMA Period</label><select class="inp" id="ema-period"><option value="21">21 EMA</option><option value="9">9 EMA</option><option value="50">50 EMA</option><option value="200">200 EMA</option></select></div>
+          <div><label class="lbl">Setup Type</label><select class="inp" id="ema-setup">
+            <option>Price Touching EMA</option><option selected>Price Bouncing from EMA</option>
+            <option>EMA Crossover (Bull)</option><option>EMA Crossover (Bear)</option>
+            <option>Price Above All EMAs</option><option>Golden Cross (50/200)</option><option>Death Cross (50/200)</option>
+          </select></div>
+          <div><label class="lbl">Touch Distance %</label><input type="number" class="inp" id="ema-dist" value="1.5" step="0.1"></div>
+          <div><label class="lbl">EMA Slope</label><select class="inp" id="ema-slope"><option>Any</option><option>Rising</option><option>Falling</option></select></div>
+          <div><label class="lbl">Volume Filter</label><select class="inp" id="ema-vol"><option>Any Volume</option><option>Above Avg</option><option>2x Avg</option></select></div>
+          <div><label class="lbl">Min Price ₹</label><input type="number" class="inp" id="ema-minprice" value="20"></div>
+          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="ema-limit" value="120"></div>
+        </div>
+        <button class="btn btn-primary" id="btn-ema" onclick="runScanner('ema')">▶ Run Scanner</button>
+        <div class="progress-wrap" id="progress-ema">
+          <div class="progress-lbl"><span id="ptxt-ema">Scanning...</span><span id="ppct-ema">0%</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="pfill-ema"></div></div>
+        </div>
+        <div class="alert" id="alert-ema"></div>
+      </div>
+      <div class="results-wrap">
+        <div class="results-hdr"><span class="results-title">EMA RESULTS</span><span class="results-count" id="count-ema">0 Signals</span></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>EMA Value</th><th>Distance %</th><th>Slope</th><th>Vol Ratio</th><th>Setup</th></tr></thead>
+          <tbody id="tbody-ema"><tr><td colspan="8"><div class="empty"><div class="empty-icon">📈</div><div class="empty-text">Scanner run karo</div></div></td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ BREAKOUT ══ -->
+    <div class="page" id="page-breakout">
+      <div class="page-hdr">
+        <div><div class="page-title">Breakout Scanner</div><div class="page-desc">Consolidation breakouts with volume confirmation</div></div>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV('breakout')">↓ Export CSV</button>
+      </div>
+      <div class="card">
+        <div class="config-grid">
+          <div><label class="lbl">Exchange</label><select class="inp" id="bo-exchange"><option>NSE</option><option>BSE</option></select></div>
+          <div><label class="lbl">Timeframe</label><select class="inp" id="bo-tf"><option value="D">Daily</option><option value="W">Weekly</option><option value="60">60 Min</option></select></div>
+          <div><label class="lbl">Consolidation</label><input type="number" class="inp" id="bo-cons" value="10" min="4"></div>
+          <div><label class="lbl">Max Range %</label><input type="number" class="inp" id="bo-range" value="20"></div>
+          <div><label class="lbl">Breakout Volume</label><select class="inp" id="bo-vol"><option value="1.5">1.5x Avg</option><option value="2">2x Avg</option><option value="3">3x Avg</option></select></div>
+          <div><label class="lbl">Direction</label><select class="inp" id="bo-dir"><option>Upside</option><option>Downside</option><option selected>Both</option></select></div>
+          <div><label class="lbl">RSI Filter</label><select class="inp" id="bo-rsi"><option>Any</option><option>Above 50</option><option>Above 60</option><option>Below 50</option></select></div>
+          <div><label class="lbl">EMA Filter</label><select class="inp" id="bo-ema"><option>Any</option><option>Above 21 EMA</option></select></div>
+          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="bo-limit" value="120"></div>
+        </div>
+        <button class="btn btn-primary" id="btn-breakout" onclick="runScanner('breakout')">▶ Run Scanner</button>
+        <div class="progress-wrap" id="progress-breakout">
+          <div class="progress-lbl"><span id="ptxt-breakout">Scanning...</span><span id="ppct-breakout">0%</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="pfill-breakout"></div></div>
+        </div>
+        <div class="alert" id="alert-breakout"></div>
+      </div>
+      <div class="results-wrap">
+        <div class="results-hdr"><span class="results-title">BREAKOUT RESULTS</span><span class="results-count" id="count-breakout">0 Signals</span></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>Range High</th><th>Range Low</th><th>Range %</th><th>Vol Ratio</th><th>21 EMA</th><th>RSI</th><th>Signal</th></tr></thead>
+          <tbody id="tbody-breakout"><tr><td colspan="10"><div class="empty"><div class="empty-icon">🚀</div><div class="empty-text">Scanner run karo</div></div></td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ RSI ══ -->
+    <div class="page" id="page-rsi">
+      <div class="page-hdr">
+        <div><div class="page-title">RSI Scanner</div><div class="page-desc">RSI divergence, overbought/oversold setups</div></div>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV('rsi')">↓ Export CSV</button>
+      </div>
+      <div class="card">
+        <div class="config-grid">
+          <div><label class="lbl">Exchange</label><select class="inp" id="rsi-exchange"><option>NSE</option><option>BSE</option></select></div>
+          <div><label class="lbl">Timeframe</label><select class="inp" id="rsi-tf"><option value="D">Daily</option><option value="W">Weekly</option><option value="60">60 Min</option></select></div>
+          <div><label class="lbl">RSI Period</label><input type="number" class="inp" id="rsi-period" value="14"></div>
+          <div><label class="lbl">Setup Type</label><select class="inp" id="rsi-setup">
+            <option>Bullish Divergence</option><option>Bearish Divergence</option>
+            <option>Oversold Bounce (&lt;30)</option><option>Overbought (&gt;70)</option>
+            <option selected>RSI above 60 (Momentum)</option><option>RSI crossing 50</option><option>Custom Range</option>
+          </select></div>
+          <div><label class="lbl">RSI Min</label><input type="number" class="inp" id="rsi-min" value="40"></div>
+          <div><label class="lbl">RSI Max</label><input type="number" class="inp" id="rsi-max" value="65"></div>
+          <div><label class="lbl">Volume Filter</label><select class="inp" id="rsi-vol"><option>Any</option><option>Above Avg</option><option>2x Avg</option></select></div>
+          <div><label class="lbl">Min Price ₹</label><input type="number" class="inp" id="rsi-minprice" value="20"></div>
+          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="rsi-limit" value="120"></div>
+        </div>
+        <button class="btn btn-primary" id="btn-rsi" onclick="runScanner('rsi')">▶ Run Scanner</button>
+        <div class="progress-wrap" id="progress-rsi">
+          <div class="progress-lbl"><span id="ptxt-rsi">Scanning...</span><span id="ppct-rsi">0%</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="pfill-rsi"></div></div>
+        </div>
+        <div class="alert" id="alert-rsi"></div>
+      </div>
+      <div class="results-wrap">
+        <div class="results-hdr"><span class="results-title">RSI RESULTS</span><span class="results-count" id="count-rsi">0 Signals</span></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>RSI</th><th>Signal</th><th>21 EMA</th><th>Vol Ratio</th><th>Setup</th></tr></thead>
+          <tbody id="tbody-rsi"><tr><td colspan="8"><div class="empty"><div class="empty-icon">⚡</div><div class="empty-text">Scanner run karo</div></div></td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ COMBO ══ -->
+    <div class="page" id="page-combo">
+      <div class="page-hdr">
+        <div><div class="page-title">Combo Scanner</div><div class="page-desc">Sab ek saath — highest conviction setups only</div></div>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV('combo')">↓ Export CSV</button>
+      </div>
+      <div class="card">
+        <div style="margin-bottom:14px;">
+          <label class="lbl" style="margin-bottom:8px;">Scanners Include Karo</label>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" id="cb-vol" checked> Volume Surge</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" id="cb-ema" checked> 21 EMA</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" id="cb-bo" checked> Breakout</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" id="cb-rsi" checked> RSI</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" id="cb-db"> W Pattern</label>
+          </div>
+        </div>
+        <div class="config-grid">
+          <div><label class="lbl">Exchange</label><select class="inp" id="combo-exchange"><option>NSE</option><option>BSE</option></select></div>
+          <div><label class="lbl">Timeframe</label><select class="inp" id="combo-tf"><option value="D">Daily</option><option value="W">Weekly</option></select></div>
+          <div><label class="lbl">Min Signals</label><select class="inp" id="combo-minsig"><option value="2">2+ Signals</option><option value="3">3+ Signals</option><option value="1">Any Signal</option></select></div>
+          <div><label class="lbl">Min Price ₹</label><input type="number" class="inp" id="combo-price" value="50"></div>
+          <div><label class="lbl">Max Stocks</label><input type="number" class="inp" id="combo-limit" value="200"></div>
+        </div>
+        <button class="btn btn-primary" id="btn-combo" onclick="runScanner('combo')">⚡ Run Combo Scan</button>
+        <div class="progress-wrap" id="progress-combo">
+          <div class="progress-lbl"><span id="ptxt-combo">Running all scanners...</span><span id="ppct-combo">0%</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="pfill-combo"></div></div>
+        </div>
+        <div class="alert" id="alert-combo"></div>
+      </div>
+      <div class="results-wrap">
+        <div class="results-hdr"><span class="results-title">COMBO RESULTS</span><span class="results-count" id="count-combo">0 Signals</span></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Symbol</th><th>LTP ₹</th><th>Chg %</th><th>Signals</th><th>Score</th><th>21 EMA</th><th>Vol Ratio</th><th>RSI</th><th>Entry</th><th>SL</th><th>Target</th></tr></thead>
+          <tbody id="tbody-combo"><tr><td colspan="11"><div class="empty"><div class="empty-icon">🎯</div><div class="empty-text">Combo scan run karo</div></div></td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end content -->
+</div><!-- end layout -->
+
+<script>
+// ── STATE ──
+let sbUrl = '', sbKey = '';
+let connected = false;
+let scanActive = false;
+const scanResults = {};
+const DEFAULT_SB_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co';
+const DEFAULT_SB_KEY = 'sb_publishable_RvP26Tv0JsvZkLGBvi8B5A_MycDvpbj';
+
+function initCredentials() {
+  const saved = {
+    sbUrl: localStorage.getItem('ts_sb_url') || DEFAULT_SB_URL,
+    sbKey: localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY,
+  };
+
+  document.getElementById('sbUrl').value = saved.sbUrl;
+  document.getElementById('sbKey').value = saved.sbKey;
+}
+
+// ── SUPABASE FUNCTION CALL ──
+async function callFn(fnName, body) {
+  const res = await fetch(`${sbUrl}/functions/v1/${fnName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sbKey}`, 'apikey': sbKey },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
+// ── NAVIGATION ──
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.getAttribute('onclick')?.includes("'" + name + "'")) n.classList.add('active');
+  });
+}
+
+// ── CONNECT ──
+async function connectApp() {
+  sbUrl    = document.getElementById('sbUrl').value.trim().replace(/\/$/, '');
+  sbKey    = document.getElementById('sbKey').value.trim();
+
+  localStorage.setItem('ts_sb_url', sbUrl);
+  localStorage.setItem('ts_sb_key', sbKey);
+
+  if (!sbUrl || !sbKey) {
+    showAlert('connectAlert', 'err', 'Supabase URL aur Key required hain');
+    return;
+  }
+
+  showAlert('connectAlert', 'info', '⏳ Verifying...');
+
+  try {
+    const data = await callFn('connect', {});
+    if (data.success) {
+      connected = true;
+      document.getElementById('statusDot').classList.add('live');
+      document.getElementById('statusText').textContent = data.name + ' — Connected';
+      showAlert('connectAlert', 'ok', '✓ Connected! Scanner server ready.');
+    } else {
+      showAlert('connectAlert', 'err', '✗ ' + (data.message || 'Connection failed'));
+    }
+  } catch (e) {
+    showAlert('connectAlert', 'err', '✗ Supabase URL ya Key galat hai: ' + e.message);
+  }
+}
+
+// ── SCANNER ──
+async function runScanner(type) {
+  if (!connected) { showAlert('alert-' + type, 'err', '⚠ Pehle API Setup se connect karo'); return; }
+
+  scanActive = true;
+  const btn = document.getElementById('btn-' + type);
+  if (btn) btn.disabled = true;
+
+  showProgress(type, true);
+  showAlert('alert-' + type, 'info', '🔄 Symbol list fetch ho rahi hai...');
+
+  try {
+    // 1. Get symbols
+    const symParams = getSymParams(type);
+    const symData = await callFn('symbols', { ...symParams });
+    if (!symData.success) throw new Error(symData.message || 'Symbol fetch failed');
+
+    const symbols = symData.symbols;
+    updateProgress(type, 0, symbols.length, 'Scanning...');
+    showAlert('alert-' + type, 'info', `📋 ${symbols.length} stocks mili — scan shuru...`);
+
+    // 2. Batch scan (50 at a time)
+    const batchSize = 20;
+    const allResults = [];
+
+    for (let i = 0; i < symbols.length; i += batchSize) {
+      if (!scanActive) break;
+      const batch = symbols.slice(i, i + batchSize);
+      const fnName = 'scan-' + type;
+      const params = getScanParams(type);
+
+      const res = await callFn(fnName, {
+        symbols: batch,
+        params
+      });
+
+      if (!res.success) {
+        throw new Error(res.message || 'Scanner request failed');
+      }
+
+      if (res.results) allResults.push(...res.results);
+      updateProgress(type, Math.min(i + batchSize, symbols.length), symbols.length, 'Scanning...');
+
+      // Update table progressively
+      scanResults[type] = allResults;
+      renderTable(type, allResults);
+    }
+
+    showProgress(type, false);
+    showAlert('alert-' + type, 'ok', `✓ Scan complete — ${allResults.length} signals mili ${symbols.length} stocks mein`);
+    updateStats(type, symbols.length, allResults);
+  } catch (e) {
+    showAlert('alert-' + type, 'err', '✗ Error: ' + e.message);
+    showProgress(type, false);
+  }
+
+  if (btn) btn.disabled = false;
+  scanActive = false;
+}
+
+function stopScan() { scanActive = false; }
+
+function getSymParams(type) {
+  const exchangeMap = { volume:'vol-exchange', ema:'ema-exchange', breakout:'bo-exchange', rsi:'rsi-exchange', combo:'combo-exchange' };
+  const limitMap    = { volume:'vol-limit', ema:'ema-limit', breakout:'bo-limit', rsi:'rsi-limit', combo:'combo-limit' };
+  return {
+    exchange: document.getElementById(exchangeMap[type])?.value || 'NSE',
+    limit: parseInt(document.getElementById(limitMap[type])?.value || 200)
+  };
+}
+
+function getScanParams(type) {
+  const p = {};
+  if (type === 'volume') {
+    p.timeframe   = document.getElementById('vol-tf').value;
+    p.vol_ratio   = parseFloat(document.getElementById('vol-ratio').value);
+    p.avg_period  = parseInt(document.getElementById('vol-period').value);
+    p.min_price   = parseFloat(document.getElementById('vol-minprice').value);
+    p.min_avg_vol = parseInt(document.getElementById('vol-minvol').value);
+    p.direction   = document.getElementById('vol-dir').value;
+  } else if (type === 'ema') {
+    p.timeframe   = document.getElementById('ema-tf').value;
+    p.ema_period  = parseInt(document.getElementById('ema-period').value);
+    p.setup_type  = document.getElementById('ema-setup').value;
+    p.touch_dist  = parseFloat(document.getElementById('ema-dist').value);
+    p.ema_slope   = document.getElementById('ema-slope').value;
+    p.vol_filter  = document.getElementById('ema-vol').value;
+    p.min_price   = parseFloat(document.getElementById('ema-minprice').value);
+  } else if (type === 'breakout') {
+    p.timeframe   = document.getElementById('bo-tf').value;
+    p.cons_period = parseInt(document.getElementById('bo-cons').value);
+    p.max_range_pct = parseFloat(document.getElementById('bo-range').value);
+    p.bo_vol      = parseFloat(document.getElementById('bo-vol').value);
+    p.direction   = document.getElementById('bo-dir').value;
+    p.rsi_filter  = document.getElementById('bo-rsi').value;
+    p.ema_filter  = document.getElementById('bo-ema').value;
+  } else if (type === 'rsi') {
+    p.timeframe   = document.getElementById('rsi-tf').value;
+    p.rsi_period  = parseInt(document.getElementById('rsi-period').value);
+    p.setup_type  = document.getElementById('rsi-setup').value;
+    p.rsi_min     = parseFloat(document.getElementById('rsi-min').value);
+    p.rsi_max     = parseFloat(document.getElementById('rsi-max').value);
+    p.vol_filter  = document.getElementById('rsi-vol').value;
+    p.min_price   = parseFloat(document.getElementById('rsi-minprice').value);
+  } else if (type === 'combo') {
+    p.timeframe    = document.getElementById('combo-tf').value;
+    p.min_signals  = parseInt(document.getElementById('combo-minsig').value);
+    p.min_price    = parseFloat(document.getElementById('combo-price').value);
+    const enabled  = [];
+    if (document.getElementById('cb-vol').checked) enabled.push('volume');
+    if (document.getElementById('cb-ema').checked) enabled.push('ema');
+    if (document.getElementById('cb-bo').checked)  enabled.push('breakout');
+    if (document.getElementById('cb-rsi').checked) enabled.push('rsi');
+    if (document.getElementById('cb-db').checked)  enabled.push('double');
+    p.enabled = enabled;
+  }
+  return p;
+}
+
+// ── RENDER TABLE ──
+function renderTable(type, data) {
+  const tbody = document.getElementById('tbody-' + type);
+  const count = document.getElementById('count-' + type);
+  count.textContent = data.length + ' Signals';
+
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="20"><div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">Koi signal nahi mila — filters adjust karo</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.map(r => buildRow(type, r)).join('');
+}
+
+function buildRow(type, r) {
+  const chg = parseFloat(r.change_pct);
+  const cc  = chg >= 0 ? 'up' : 'dn';
+  const cs  = chg >= 0 ? '+' : '';
+  const fmtVol = v => v >= 1e7 ? (v/1e7).toFixed(1)+'Cr' : v >= 1e5 ? (v/1e5).toFixed(1)+'L' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : v;
+
+  const rows = {
+    volume:   `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>${fmtVol(r.volume)}</td><td class="neu">${fmtVol(r.avg_vol)}</td><td class="${r.vol_ratio>=3?'up':''}">${r.vol_ratio}x</td><td><span class="badge ${r.signal==='BULLISH'?'badge-green':'badge-red'}">${r.signal}</span></td><td class="neu">₹${r.high_52w}</td><td class="neu">₹${r.low_52w}</td>`,
+    ema:      `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>₹${r.ema_value}</td><td class="${Math.abs(r.distance_pct)<0.5?'up':'neu'}">${r.distance_pct}%</td><td class="${r.ema_slope==='Rising'?'up':'dn'}">${r.ema_slope==='Rising'?'↑':'↓'} ${r.ema_slope}</td><td>${r.vol_ratio}x</td><td><span class="badge badge-blue">${(r.setup || 'N/A').substring(0,20)}</span></td>`,
+    breakout: `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>₹${r.range_high}</td><td class="neu">₹${r.range_low}</td><td>${r.range_pct}%</td><td>${r.vol_ratio}x</td><td class="neu">₹${r.ema_21}</td><td>${r.rsi}</td><td><span class="badge ${String(r.signal || '').includes('BULL')?'badge-green':'badge-red'}">${r.signal || 'N/A'}</span></td>`,
+    rsi:      `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td>${r.rsi}</td><td><span class="badge badge-amber">${r.rsi_signal}</span></td><td class="neu">₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td class="neu" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;">${r.setup}</td>`,
+    combo:    `<td class="sym">${r.symbol}</td><td class="up">₹${r.ltp}</td><td class="${cc}">${cs}${r.change_pct}%</td><td style="font-size:11px;max-width:160px">${r.signals}</td><td class="up">${r.score}</td><td class="neu">₹${r.ema_21}</td><td>${r.vol_ratio}x</td><td>${r.rsi}</td><td class="up">₹${r.entry}</td><td class="dn">₹${r.sl}</td><td class="up">₹${r.target}</td>`,
+  };
+  return `<tr>${rows[type] || ''}</tr>`;
+}
+
+function updateStats(type, total, results) {
+  if (type === 'volume') {
+    document.getElementById('stats-volume').style.display = 'block';
+    document.getElementById('sv-scanned').textContent = total;
+    document.getElementById('sv-found').textContent = results.length;
+    document.getElementById('sv-bull').textContent = results.filter(r=>r.signal==='BULLISH').length;
+    document.getElementById('sv-bear').textContent = results.filter(r=>r.signal==='BEARISH').length;
+  }
+}
+
+// ── EXPORT CSV ──
+function exportCSV(type) {
+  const data = scanResults[type];
+  if (!data?.length) { alert('Pehle scanner run karo'); return; }
+  const keys = Object.keys(data[0]);
+  const csv  = [keys.join(','), ...data.map(r => keys.map(k => r[k]).join(','))].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = `tradescope-${type}-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// ── HELPERS ──
+function showProgress(type, show) {
+  const el = document.getElementById('progress-' + type);
+  if (el) el.classList.toggle('show', show);
+  if (!show) { const f = document.getElementById('pfill-' + type); if(f) f.style.width = '0'; }
+}
+
+function updateProgress(type, done, total, txt) {
+  const pct = total ? Math.round(done/total*100) : 0;
+  const f = document.getElementById('pfill-' + type);
+  const t = document.getElementById('ptxt-' + type);
+  const p = document.getElementById('ppct-' + type);
+  if (f) f.style.width = pct + '%';
+  if (t) t.textContent = txt + ` (${done}/${total})`;
+  if (p) p.textContent = pct + '%';
+}
+
+function showAlert(id, type, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const map = {err:'alert-err', ok:'alert-ok', info:'alert-info'};
+  el.className = `alert ${map[type]} show`;
+  el.textContent = msg;
+  if (type === 'ok') setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+document.addEventListener('DOMContentLoaded', initCredentials);
+</script>
+</body>
+</html>
