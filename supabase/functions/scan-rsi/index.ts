@@ -5,6 +5,25 @@ import { calcEMA, calcRSI, avg, findPivotHighs, findPivotLows } from "../_shared
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function symbolCandidates(sym: string): string[] {
+  const raw = String(sym || "").trim().toUpperCase();
+  const base = raw.replace("NSE:", "").replace("BSE:", "").replace("-EQ", "");
+  const arr = [raw, `NSE:${base}-EQ`, `${base}-EQ`, base];
+  return [...new Set(arr.filter(Boolean))];
+}
+
+async function fetchHistoryWithFallback(sym: string, timeframe: string, appId: string, token: string, lookbackDays: number) {
+  const candidates = symbolCandidates(sym);
+  let last: any = { s: "error", message: "No data" };
+
+  for (const candidate of candidates) {
+    const data = await getHistoricalData(candidate, timeframe, appId, token, lookbackDays);
+    if (data?.s === "ok" && data?.candles?.length) return data;
+    last = data;
+  }
+  return last;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -31,6 +50,7 @@ serve(async (req) => {
     const getLookbackDays = (tf: string) => (tf === "W" ? 3650 : tf === "D" ? 1460 : 180);
 
     const results: object[] = [];
+    const relaxedPool: any[] = [];
     let apiFailures = 0;
     let noDataCount = 0;
     let sampleFailure = "";
@@ -38,12 +58,12 @@ serve(async (req) => {
     for (const sym of symbols) {
       try {
         let usedTimeframe = timeframe;
-        let data = await getHistoricalData(sym, usedTimeframe, app_id, access_token, getLookbackDays(usedTimeframe));
+        let data = await fetchHistoryWithFallback(sym, usedTimeframe, app_id, access_token, getLookbackDays(usedTimeframe));
         const msg0 = String(data?.message || data?.s || "").toLowerCase();
         const intradayRequested = !["D", "W", "M"].includes(String(timeframe).toUpperCase());
         if ((data.s !== "ok" || !data.candles?.length) && intradayRequested && (msg0.includes("invalid input") || msg0.includes("invalid symbol"))) {
           usedTimeframe = "D";
-          data = await getHistoricalData(sym, usedTimeframe, app_id, access_token, getLookbackDays(usedTimeframe));
+          data = await fetchHistoryWithFallback(sym, usedTimeframe, app_id, access_token, getLookbackDays(usedTimeframe));
         }
 
         if (data.s !== "ok" || !data.candles?.length) {
@@ -126,10 +146,8 @@ serve(async (req) => {
           }
         }
 
-        if (!matched) continue;
-
         const name = sym.replace("NSE:", "").replace("BSE:", "").replace("-EQ", "");
-        results.push({
+        const row = {
           symbol: name,
           ltp: ltp.toFixed(2),
           change_pct: chgPct,
@@ -139,13 +157,41 @@ serve(async (req) => {
           vol_ratio: volRatio,
           setup: setup_type,
           timeframe_used: usedTimeframe,
-        });
+        };
+
+        if (matched) {
+          results.push(row);
+        } else {
+          relaxedPool.push(row);
+        }
       } catch (err) {
         apiFailures += 1;
         if (!sampleFailure) sampleFailure = `${sym}: ${err instanceof Error ? err.message : String(err)}`;
         continue;
       }
       finally { await sleep(250); }
+    }
+
+    if (!results.length && relaxedPool.length) {
+      let relaxed = [...relaxedPool];
+      if (setup_type === "RSI above 60 (Momentum)") {
+        relaxed = relaxed.filter((r) => parseFloat(r.rsi) >= 55).sort((a, b) => parseFloat(b.rsi) - parseFloat(a.rsi));
+      } else if (setup_type === "Oversold Bounce (<30)") {
+        relaxed = relaxed.filter((r) => parseFloat(r.rsi) <= 40).sort((a, b) => parseFloat(a.rsi) - parseFloat(b.rsi));
+      } else if (setup_type === "Custom Range") {
+        relaxed = relaxed
+          .sort((a, b) => {
+            const da = Math.min(Math.abs(parseFloat(a.rsi) - rsi_min), Math.abs(parseFloat(a.rsi) - rsi_max));
+            const db = Math.min(Math.abs(parseFloat(b.rsi) - rsi_min), Math.abs(parseFloat(b.rsi) - rsi_max));
+            return da - db;
+          });
+      } else {
+        relaxed = relaxed.sort((a, b) => Math.abs(parseFloat(b.change_pct)) - Math.abs(parseFloat(a.change_pct)));
+      }
+
+      for (const r of relaxed.slice(0, 25)) {
+        results.push({ ...r, rsi_signal: "WATCHLIST", setup: `${setup_type} (RELAXED)` });
+      }
     }
 
     return new Response(JSON.stringify({
