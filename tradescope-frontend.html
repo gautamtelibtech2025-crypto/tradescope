@@ -626,6 +626,7 @@ function openFyersTokenPage() {
 
 async function fetchConfigFromBackend() {
   try {
+    showAlert('connectAlert', 'info', '⏳ Backend config load ho raha hai...');
     const resp = await fetch('/functions/v1/config', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
@@ -638,10 +639,15 @@ async function fetchConfigFromBackend() {
       if (sbKeyEl) sbKeyEl.value = data.supabase_anon_key;
       localStorage.setItem('ts_sb_url', data.supabase_url);
       localStorage.setItem('ts_sb_key', data.supabase_anon_key);
+      showAlert('connectAlert', 'ok', '✓ Backend config loaded — Supabase auto-set');
       return { url: data.supabase_url, key: data.supabase_anon_key };
+    } else {
+      showAlert('connectAlert', 'err', '⚠ Backend config nahi set hai — manual entry karni padegi ya admin se pocho');
+      return null;
     }
   } catch (e) {
-    console.log('Config fetch failed (optional):', e.message);
+    showAlert('connectAlert', 'err', '⚠ Config fetch failed — manual Supabase URL aur Key daalo');
+    console.log('Config fetch error:', e.message);
   }
   return null;
 }

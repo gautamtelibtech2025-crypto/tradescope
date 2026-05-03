@@ -106,11 +106,28 @@ Bas ek baar set kar do. Ab frontend automatically backend se config fetch karega
    - App Name: TradeScope
    - Redirect URL: `http://127.0.0.1:17863/callback`
 4. **App ID** mil jaayega (e.g. `XXXXX-100`)
-5. Daily **Access Token** generate karo:
-   - Fyers API docs follow karo ya
-   - https://myapi.fyers.in/generate-authcode use karo
 
-> ⚠️ Access Token roz expire hota hai. Lekin naye script flow me daily token type/paste nahi karna padega (auto-capture + auto secret update).
+### Daily FYERS Token Generation (Fully Automated)
+
+Access Token **roz expire** hota hai, lekin process ab automatic hai:
+
+**Option 1: One-Time Setup (Recommended)**
+```bash
+# Backend secrets mein set kar do ek baar:
+supabase secrets set FYERS_APP_ID="XXXXX-100"
+supabase secrets set FYERS_ACCESS_TOKEN="current-token"
+```
+Phir daily token refresh PowerShell script से automatically हो जाएगा।
+
+**Option 2: Manual Button (Fallback)**
+- Setup page में **"Generate FYERS Token"** button hai
+- Click करो → FYERS login page खुलेगा
+- Login करके approve करो
+- PowerShell script automatically auth code capture करेगा
+- नया token Supabase secrets में save होगा
+- सब scanners automatically नया token use करेंगे
+
+> ⚠️ FYERS का policy: हर token रोज़ expire होता है, लेकिन refresh token नहीं देता। इसलिए daily नया token generate करना पड़ता है। PowerShell script इसे automatic कर देता है।
 
 ---
 
