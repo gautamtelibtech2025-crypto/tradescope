@@ -84,17 +84,19 @@ supabase functions deploy config
 
 ## Step 5b — Backend Secrets Set Karo (One-Time Admin Setup)
 
-Jisse frontend automatically backend se URL + Key fetch kare aur bar-bar manual entry na karna pade:
+Jisse frontend automatically backend se URL + Key fetch kare aur bar-bar manual entry na karna pade.
+
+**Important:** Supabase project URL को frontend में hardcode कर दिया है (`DEFAULT_SB_PROJECT_URL`). अगर आप project URL change करो तो `tradescope-frontend.html` में भी update करना पड़ेगा।
 
 ```bash
-# Apna actual Supabase project URL aur publishable key daalo
+# Supabase project secrets set karo (ek baar):
 supabase secrets set SUPABASE_URL="https://your-project-ref.supabase.co"
 supabase secrets set SUPABASE_ANON_KEY="sb_publishable_YOUR_KEY_HERE"
 supabase secrets set FYERS_APP_ID="XXXXX-100"
 supabase secrets set FYERS_ACCESS_TOKEN="your-current-access-token"
 ```
 
-Bas ek baar set kar do. Ab frontend automatically backend se config fetch karega aur auto-connect hoga.
+Ab frontend automatically `/config` endpoint से ये values fetch karega aur auto-connect hoga.
 
 ---
 

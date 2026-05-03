@@ -523,6 +523,7 @@ let scanActive = false;
 const scanResults = {};
 const DEFAULT_SB_URL = '';
 const DEFAULT_SB_KEY = '';
+const DEFAULT_SB_PROJECT_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co'; // Backend config fetched from here
 const DEFAULT_FYERS_REDIRECT = 'http://127.0.0.1:17863/callback';
 const KNOWN_BAD_SB_HOSTS = new Set(['ebsjzvjdwljahmrpxkmc.supabase.co']);
 const INTRADAY_FO_SYMBOLS = [
@@ -627,7 +628,8 @@ function openFyersTokenPage() {
 async function fetchConfigFromBackend() {
   try {
     showAlert('connectAlert', 'info', '⏳ Backend config load ho raha hai...');
-    const resp = await fetch('/functions/v1/config', {
+    const configUrl = DEFAULT_SB_PROJECT_URL + '/functions/v1/config';
+    const resp = await fetch(configUrl, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });

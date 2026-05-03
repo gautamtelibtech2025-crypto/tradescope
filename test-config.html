@@ -22,8 +22,9 @@
       result.innerHTML = '⏳ Testing...';
       
       try {
-        console.log('Fetching from: /functions/v1/config');
-        const resp = await fetch('/functions/v1/config', {
+        const configUrl = 'https://ebsjzvjdwljahmrpxkmc.supabase.co/functions/v1/config';
+        console.log('Fetching from:', configUrl);
+        const resp = await fetch(configUrl, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' }
         });
