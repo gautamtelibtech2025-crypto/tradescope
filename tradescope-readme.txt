@@ -87,13 +87,13 @@ supabase functions deploy scan-combo
 2. Login karo
 3. **Create App** karo:
    - App Name: TradeScope
-   - Redirect URL: `https://127.0.0.1`
+   - Redirect URL: `http://127.0.0.1:17863/callback`
 4. **App ID** mil jaayega (e.g. `XXXXX-100`)
 5. Daily **Access Token** generate karo:
    - Fyers API docs follow karo ya
    - https://myapi.fyers.in/generate-authcode use karo
 
-> ⚠️ Access Token **roz expire** hota hai — roz subah 9 baje se pehle naya generate karo
+> ⚠️ Access Token roz expire hota hai. Lekin naye script flow me daily token type/paste nahi karna padega (auto-capture + auto secret update).
 
 ---
 
@@ -130,13 +130,16 @@ Notes:
 
 ## Step 7 — App Connect Karo
 
-App mein jaao → Setup page:
+App mein jaao -> Setup page:
 - **Supabase URL**: `https://xxxx.supabase.co`
 - **Supabase Anon Key**: Settings se copy kiya hua
-- **Fyers App ID**: `XXXXX-100`
-- **Fyers Access Token**: Aaj ka token
 
-Connect button dabao — ho gaya! 🎉
+Connect button dabao -> ho gaya! 🎉
+
+Important:
+- Fyers App ID aur Fyers Access Token frontend me enter mat karo.
+- Ye dono values sirf Supabase server secrets me rahengi.
+- Agar token expire ho jaye to sirf admin token rotate karega (users ko dobara token nahi dena padega).
 
 ---
 

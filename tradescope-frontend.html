@@ -526,6 +526,15 @@ function initCredentials() {
   document.getElementById('sbKey').value = saved.sbKey;
 }
 
+async function autoConnectIfSaved() {
+  const savedUrl = (localStorage.getItem('ts_sb_url') || '').trim();
+  const savedKey = (localStorage.getItem('ts_sb_key') || '').trim();
+  if (!savedUrl || !savedKey) return;
+
+  showAlert('connectAlert', 'info', 'Auto connect chal raha hai...');
+  await connectApp();
+}
+
 // ── SUPABASE FUNCTION CALL ──
 async function callFn(fnName, body, timeoutMs = 60000) {
   let parsedUrl;
@@ -938,7 +947,10 @@ function showAlert(id, type, msg) {
   if (type === 'ok') setTimeout(() => el.classList.remove('show'), 5000);
 }
 
-document.addEventListener('DOMContentLoaded', initCredentials);
+document.addEventListener('DOMContentLoaded', async () => {
+  initCredentials();
+  await autoConnectIfSaved();
+});
 </script>
 </body>
 </html>

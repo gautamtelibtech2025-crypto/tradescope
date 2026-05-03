@@ -1,7 +1,7 @@
 param(
   [switch]$Setup,
   [string]$AppId = "GCANHWSSCK-100",
-  [string]$RedirectUri = "https://127.0.0.1",
+  [string]$RedirectUri = "http://127.0.0.1:17863/callback",
   [string]$SecretId,
   [switch]$UseDefaults,
   [string]$AuthCode
@@ -78,6 +78,63 @@ function Extract-Code([string]$inputText) {
   return $null
 }
 
+function Try-Capture-AuthCodeFromLocalRedirect([string]$AuthUrl, [string]$RedirectUri, [int]$TimeoutSeconds = 180) {
+  try {
+    $uri = [System.Uri]$RedirectUri
+  } catch {
+    return $null
+  }
+
+  $isLocalHost = ($uri.Host -eq "127.0.0.1" -or $uri.Host -eq "localhost")
+  if ($uri.Scheme -ne "http" -or -not $isLocalHost) {
+    return $null
+  }
+
+  $prefix = "http://$($uri.Host):$($uri.Port)/"
+  $listener = [System.Net.HttpListener]::new()
+  $listener.Prefixes.Add($prefix)
+
+  try {
+    $listener.Start()
+    Write-Host "Browser auth page open ho rahi hai..." -ForegroundColor Cyan
+    Write-Host "Auto-capture mode ON. Login ke baad code automatically read ho jayega." -ForegroundColor Cyan
+    Start-Process $AuthUrl | Out-Null
+
+    $pending = $listener.BeginGetContext($null, $null)
+    if (-not $pending.AsyncWaitHandle.WaitOne($TimeoutSeconds * 1000)) {
+      Write-Host "Auto-capture timeout ($TimeoutSeconds sec)." -ForegroundColor Yellow
+      return $null
+    }
+
+    $ctx = $listener.EndGetContext($pending)
+    $requestUrl = $ctx.Request.Url
+    $qs = [System.Web.HttpUtility]::ParseQueryString($requestUrl.Query)
+    $code = $qs["auth_code"]
+    if ([string]::IsNullOrWhiteSpace($code)) {
+      $code = $qs["code"]
+    }
+
+    $html = "<html><body style='font-family:Segoe UI,Arial;padding:24px'><h3>Login complete</h3><p>Aap terminal par wapas ja sakte ho.</p></body></html>"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($html)
+    $ctx.Response.StatusCode = 200
+    $ctx.Response.ContentType = "text/html; charset=utf-8"
+    $ctx.Response.ContentLength64 = $bytes.Length
+    $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+    $ctx.Response.Close()
+
+    return $code
+  } catch {
+    Write-Host "Auto-capture listener start/fetch fail hua: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "Hint: Redirect URI ko http://127.0.0.1:17863/callback rakho aur same value FYERS app me bhi set karo." -ForegroundColor Yellow
+    return $null
+  } finally {
+    if ($listener.IsListening) {
+      $listener.Stop()
+    }
+    $listener.Close()
+  }
+}
+
 function Setup-Mode {
   Write-Host "=== FYERS QUICK SETUP ===" -ForegroundColor Cyan
   $id = $AppId
@@ -140,12 +197,19 @@ $authUrl = "https://api-t1.fyers.in/api/v3/generate-authcode?client_id=$([uri]::
 
 $raw = $AuthCode
 if ([string]::IsNullOrWhiteSpace($raw)) {
-  Write-Host "Browser auth page open ho rahi hai..." -ForegroundColor Cyan
-  Start-Process $authUrl | Out-Null
-  Write-Host ""
-  Write-Host "Login ke baad jo redirect URL khule, usko yahan paste karo." -ForegroundColor Yellow
-  Write-Host "(Ya direct auth_code paste kar sakte ho)"
-  $raw = Read-Host "Redirect URL / auth_code"
+  $raw = Try-Capture-AuthCodeFromLocalRedirect -AuthUrl $authUrl -RedirectUri $redirect -TimeoutSeconds 180
+
+  if ([string]::IsNullOrWhiteSpace($raw)) {
+    Write-Host "Auto-capture unavailable ya timeout. Manual fallback use ho raha hai..." -ForegroundColor Yellow
+    Write-Host "Browser auth page open ho rahi hai..." -ForegroundColor Cyan
+    Start-Process $authUrl | Out-Null
+    Write-Host ""
+    Write-Host "Login ke baad jo redirect URL khule, usko yahan paste karo." -ForegroundColor Yellow
+    Write-Host "(Ya direct auth_code paste kar sakte ho)"
+    $raw = Read-Host "Redirect URL / auth_code"
+  } else {
+    Write-Host "Auth code auto-capture successful." -ForegroundColor Green
+  }
 }
 $authCode = Extract-Code $raw
 
@@ -190,12 +254,14 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 $token | Set-Clipboard
 Write-Host "" 
 Write-Host "Access token generated and clipboard me copy ho gaya." -ForegroundColor Green
-Write-Host "Is token ko frontend ke FYERS ACCESS TOKEN field me paste karo." -ForegroundColor Green
+Write-Host "Frontend me token paste karne ki zarurat nahi hai." -ForegroundColor Green
+Write-Host "Token server secret me set hoga, users ko dobara token nahi manga jayega." -ForegroundColor Green
 
 try {
   Write-Host "Supabase secret update kar raha hoon..." -ForegroundColor Cyan
   npx supabase secrets set FYERS_ACCESS_TOKEN=$token | Out-Null
   Write-Host "Supabase me FYERS_ACCESS_TOKEN updated. End users ko token enter nahi karna padega." -ForegroundColor Green
+  Write-Host "Note: FYERS access token policy ke hisab se expire hota hai, isliye admin ko naya token rotate karna pad sakta hai." -ForegroundColor Yellow
 } catch {
   Write-Host "Supabase secret auto-update fail hua. Manually run karo:" -ForegroundColor Yellow
   Write-Host "npx supabase secrets set FYERS_ACCESS_TOKEN=<YOUR_NEW_TOKEN>" -ForegroundColor Yellow
