@@ -126,6 +126,16 @@ Notes:
 - `FYERS_APP_ID` aur `FYERS_ACCESS_TOKEN` sirf Supabase secrets mein rahenge (frontend mein nahi).
 - Agar `tradescope-frontend.html` mein change karo, bas Git push karo; Render auto redeploy karega.
 
+### Daily Auto Launch (Optional but Recommended)
+
+Agar aap admin bhi ho aur customer bhi, to daily token refresh yaad rakhna avoid karne ke liye scheduler set karo:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\create-fyers-refresh-task.ps1 -Time 08:45
+```
+
+Isse daily specified time par token script auto-launch hoga. Aapko bas FYERS login complete karna hoga.
+
 ---
 
 ## Step 7 — App Connect Karo
