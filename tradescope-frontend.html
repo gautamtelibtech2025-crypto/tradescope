@@ -214,6 +214,9 @@ tbody td { padding:10px 12px; white-space:nowrap; }
                 </div>
               </div>
             </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" onclick="resetSavedSetup()">♻ Reset Saved Setup</button>
+            </div>
             <button class="btn btn-primary" onclick="connectApp()">⚡ Connect</button>
             <div class="alert" id="connectAlert"></div>
           </div>
@@ -521,6 +524,7 @@ const scanResults = {};
 const DEFAULT_SB_URL = '';
 const DEFAULT_SB_KEY = '';
 const DEFAULT_FYERS_REDIRECT = 'http://127.0.0.1:17863/callback';
+const KNOWN_BAD_SB_HOSTS = new Set(['ebsjzvjdwljahmrpxkmc.supabase.co']);
 const INTRADAY_FO_SYMBOLS = [
   'NSE:RELIANCE-EQ','NSE:HDFCBANK-EQ','NSE:ICICIBANK-EQ','NSE:SBIN-EQ','NSE:AXISBANK-EQ','NSE:KOTAKBANK-EQ',
   'NSE:BAJFINANCE-EQ','NSE:BAJAJFINSV-EQ','NSE:INFY-EQ','NSE:TCS-EQ','NSE:WIPRO-EQ','NSE:HCLTECH-EQ',
@@ -539,6 +543,17 @@ const RSI_SAFE_NSE_SYMBOLS = [
 ];
 
 function initCredentials() {
+  const currentSavedUrl = (localStorage.getItem('ts_sb_url') || '').trim();
+  try {
+    const savedHost = currentSavedUrl ? new URL(currentSavedUrl).hostname : '';
+    if (KNOWN_BAD_SB_HOSTS.has(savedHost)) {
+      localStorage.removeItem('ts_sb_url');
+      localStorage.removeItem('ts_sb_key');
+    }
+  } catch {
+    // Ignore malformed saved URL and continue with normal initialization.
+  }
+
   const saved = {
     sbUrl: localStorage.getItem('ts_sb_url') || DEFAULT_SB_URL,
     sbKey: localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY,
@@ -566,6 +581,30 @@ function clearManualToken() {
   if (tokenEl) tokenEl.value = '';
   localStorage.removeItem('ts_fy_access_token');
   showAlert('connectAlert', 'info', 'Manual token clear ho gaya. Ab server secret mode use hoga.');
+}
+
+function resetSavedSetup() {
+  ['ts_sb_url', 'ts_sb_key', 'ts_fy_app_id', 'ts_fy_access_token', 'ts_fy_redirect'].forEach((k) => localStorage.removeItem(k));
+
+  const sbUrlEl = document.getElementById('sbUrl');
+  const sbKeyEl = document.getElementById('sbKey');
+  const fyAppEl = document.getElementById('fyAppId');
+  const fyTokenEl = document.getElementById('fyAccessToken');
+  const fyRedirectEl = document.getElementById('fyRedirect');
+
+  if (sbUrlEl) sbUrlEl.value = '';
+  if (sbKeyEl) sbKeyEl.value = '';
+  if (fyAppEl) fyAppEl.value = '';
+  if (fyTokenEl) fyTokenEl.value = '';
+  if (fyRedirectEl) fyRedirectEl.value = DEFAULT_FYERS_REDIRECT;
+
+  connected = false;
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  if (dot) dot.classList.remove('live');
+  if (txt) txt.textContent = 'Not Connected';
+
+  showAlert('connectAlert', 'info', 'Saved setup reset ho gaya. Ab fresh Supabase URL/Key dalo.');
 }
 
 function openFyersTokenPage() {
