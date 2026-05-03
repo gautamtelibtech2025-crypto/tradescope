@@ -185,27 +185,13 @@ tbody td { padding:10px 12px; white-space:nowrap; }
         <div class="card">
           <div style="font-weight:600;margin-bottom:14px;">🔑 Credentials</div>
           <div style="display:flex;flex-direction:column;gap:12px;">
-            <div>
-              <label class="lbl">Supabase Project URL</label>
-              <input class="inp" id="sbUrl" placeholder="https://xxxx.supabase.co">
-            </div>
-            <div>
-              <label class="lbl">Supabase Anon Key</label>
-              <input class="inp" id="sbKey" placeholder="eyJhbGciOiJIUzI1NiIs...">
-            </div>
+            <p style="font-size:13px;color:#8a97b5;line-height:1.5;">✓ सभी credentials backend से automatically load होते हैं (Supabase, FYERS App ID)।<br/>कुछ manually enter करने की जरूरत नहीं।</p>
+            
             <div style="margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
-              <div style="font-size:12px;color:#8a97b5;margin-bottom:10px;">FYERS manual override (optional). Blank rakhoge to server secret mode chalega.</div>
+              <div style="font-size:12px;color:#8a97b5;margin-bottom:10px;">FYERS Token Management (optional - manual override)</div>
               <div style="display:flex;flex-direction:column;gap:10px;">
                 <div>
-                  <label class="lbl">FYERS App ID (optional)</label>
-                  <input class="inp" id="fyAppId" placeholder="XXXXX-100">
-                </div>
-                <div>
-                  <label class="lbl">FYERS Access Token (optional)</label>
-                  <input class="inp" id="fyAccessToken" placeholder="Aaj ka token" autocomplete="off">
-                </div>
-                <div>
-                  <label class="lbl">FYERS Redirect URI (Generate Token button ke liye)</label>
+                  <label class="lbl">FYERS Redirect URI (optional)</label>
                   <input class="inp" id="fyRedirect" placeholder="http://127.0.0.1:17863/callback">
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -571,10 +557,8 @@ function initCredentials() {
 }
 
 function getFyersOverrideCredentials() {
-  const appId = (document.getElementById('fyAppId')?.value || '').trim();
-  const accessToken = (document.getElementById('fyAccessToken')?.value || '').trim();
-  if (!appId || !accessToken) return {};
-  return { app_id: appId, access_token: accessToken };
+  // अब सब कुछ backend से आता है - manual override नहीं
+  return {};
 }
 
 function clearManualToken() {
@@ -682,11 +666,8 @@ async function fetchConfigFromBackend() {
 }
 
 async function autoConnectIfSaved() {
-  const savedUrl = (localStorage.getItem('ts_sb_url') || '').trim();
-  const savedKey = (localStorage.getItem('ts_sb_key') || '').trim();
-  if (!savedUrl || !savedKey) return;
-
-  showAlert('connectAlert', 'info', 'Auto connect chal raha hai...');
+  // Backend से credentials auto-fetch करके connect करो
+  showAlert('connectAlert', 'info', 'Backend से credentials load हो रहे हैं...');
   await connectApp();
 }
 
@@ -788,27 +769,31 @@ function toggleMobileNav() {
 
 // ── CONNECT ──
 async function connectApp() {
-  sbUrl    = document.getElementById('sbUrl').value.trim().replace(/\/$/, '');
-  sbKey    = document.getElementById('sbKey').value.trim();
-  const fyAppId = (document.getElementById('fyAppId')?.value || '').trim();
-  const fyAccessToken = (document.getElementById('fyAccessToken')?.value || '').trim();
+  // पहले backend से credentials fetch करो
+  try {
+    const configUrl = DEFAULT_SB_PROJECT_URL + '/functions/v1/config';
+    const resp = await fetch(configUrl, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await resp.json();
+    
+    if (!data.success || !data.supabase_url || !data.supabase_anon_key) {
+      showAlert('connectAlert', 'err', 'Backend से credentials fetch नहीं हुए। Admin से contact करो।');
+      return;
+    }
+    
+    sbUrl = data.supabase_url.replace(/\/$/, '');
+    sbKey = data.supabase_anon_key;
+  } catch (e) {
+    showAlert('connectAlert', 'err', 'Backend से credentials fetch fail: ' + e.message);
+    return;
+  }
+  
   const fyRedirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
-
   localStorage.setItem('ts_sb_url', sbUrl);
   localStorage.setItem('ts_sb_key', sbKey);
-  localStorage.setItem('ts_fy_app_id', fyAppId);
-  localStorage.setItem('ts_fy_access_token', fyAccessToken);
   localStorage.setItem('ts_fy_redirect', fyRedirect);
-
-  if (!sbUrl || !sbKey) {
-    showAlert('connectAlert', 'err', 'Supabase URL aur Key required hain');
-    return;
-  }
-
-  if ((fyAppId && !fyAccessToken) || (!fyAppId && fyAccessToken)) {
-    showAlert('connectAlert', 'err', 'Manual override ke liye FYERS App ID aur Access Token dono do, ya dono blank chhodo.');
-    return;
-  }
 
   showAlert('connectAlert', 'info', '⏳ Verifying...');
 
