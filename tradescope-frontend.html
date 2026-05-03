@@ -193,6 +193,27 @@ tbody td { padding:10px 12px; white-space:nowrap; }
               <label class="lbl">Supabase Anon Key</label>
               <input class="inp" id="sbKey" placeholder="eyJhbGciOiJIUzI1NiIs...">
             </div>
+            <div style="margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+              <div style="font-size:12px;color:#8a97b5;margin-bottom:10px;">FYERS manual override (optional). Blank rakhoge to server secret mode chalega.</div>
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <div>
+                  <label class="lbl">FYERS App ID (optional)</label>
+                  <input class="inp" id="fyAppId" placeholder="XXXXX-100">
+                </div>
+                <div>
+                  <label class="lbl">FYERS Access Token (optional)</label>
+                  <input class="inp" id="fyAccessToken" placeholder="Aaj ka token" autocomplete="off">
+                </div>
+                <div>
+                  <label class="lbl">FYERS Redirect URI (Generate Token button ke liye)</label>
+                  <input class="inp" id="fyRedirect" placeholder="http://127.0.0.1:17863/callback">
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="btn btn-outline btn-sm" onclick="openFyersTokenPage()">🔐 Generate Access Token</button>
+                  <button class="btn btn-outline btn-sm" onclick="clearManualToken()">🧹 Clear Manual Token</button>
+                </div>
+              </div>
+            </div>
             <button class="btn btn-primary" onclick="connectApp()">⚡ Connect</button>
             <div class="alert" id="connectAlert"></div>
           </div>
@@ -499,6 +520,7 @@ let scanActive = false;
 const scanResults = {};
 const DEFAULT_SB_URL = '';
 const DEFAULT_SB_KEY = '';
+const DEFAULT_FYERS_REDIRECT = 'http://127.0.0.1:17863/callback';
 const INTRADAY_FO_SYMBOLS = [
   'NSE:RELIANCE-EQ','NSE:HDFCBANK-EQ','NSE:ICICIBANK-EQ','NSE:SBIN-EQ','NSE:AXISBANK-EQ','NSE:KOTAKBANK-EQ',
   'NSE:BAJFINANCE-EQ','NSE:BAJAJFINSV-EQ','NSE:INFY-EQ','NSE:TCS-EQ','NSE:WIPRO-EQ','NSE:HCLTECH-EQ',
@@ -520,10 +542,47 @@ function initCredentials() {
   const saved = {
     sbUrl: localStorage.getItem('ts_sb_url') || DEFAULT_SB_URL,
     sbKey: localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY,
+    fyAppId: localStorage.getItem('ts_fy_app_id') || '',
+    fyAccessToken: localStorage.getItem('ts_fy_access_token') || '',
+    fyRedirect: localStorage.getItem('ts_fy_redirect') || DEFAULT_FYERS_REDIRECT,
   };
 
   document.getElementById('sbUrl').value = saved.sbUrl;
   document.getElementById('sbKey').value = saved.sbKey;
+  document.getElementById('fyAppId').value = saved.fyAppId;
+  document.getElementById('fyAccessToken').value = saved.fyAccessToken;
+  document.getElementById('fyRedirect').value = saved.fyRedirect;
+}
+
+function getFyersOverrideCredentials() {
+  const appId = (document.getElementById('fyAppId')?.value || '').trim();
+  const accessToken = (document.getElementById('fyAccessToken')?.value || '').trim();
+  if (!appId || !accessToken) return {};
+  return { app_id: appId, access_token: accessToken };
+}
+
+function clearManualToken() {
+  const tokenEl = document.getElementById('fyAccessToken');
+  if (tokenEl) tokenEl.value = '';
+  localStorage.removeItem('ts_fy_access_token');
+  showAlert('connectAlert', 'info', 'Manual token clear ho gaya. Ab server secret mode use hoga.');
+}
+
+function openFyersTokenPage() {
+  const appId = (document.getElementById('fyAppId')?.value || '').trim();
+  const redirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
+
+  if (!appId) {
+    showAlert('connectAlert', 'err', 'Generate token se pehle FYERS App ID daalo.');
+    return;
+  }
+
+  localStorage.setItem('ts_fy_app_id', appId);
+  localStorage.setItem('ts_fy_redirect', redirect);
+
+  const authUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${encodeURIComponent(appId)}&redirect_uri=${encodeURIComponent(redirect)}&response_type=code&state=tradescope`;
+  window.open(authUrl, '_blank', 'noopener,noreferrer');
+  showAlert('connectAlert', 'info', 'FYERS auth page nayi tab me open ho gayi. Token generate karke yahan paste kar sakte ho.');
 }
 
 async function autoConnectIfSaved() {
@@ -558,12 +617,13 @@ async function callFn(fnName, body, timeoutMs = 60000) {
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const requestBody = { ...(body || {}), ...getFyersOverrideCredentials() };
 
   try {
     const res = await fetch(`${sbUrl}/functions/v1/${fnName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sbKey}`, 'apikey': sbKey },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
 
@@ -634,12 +694,23 @@ function toggleMobileNav() {
 async function connectApp() {
   sbUrl    = document.getElementById('sbUrl').value.trim().replace(/\/$/, '');
   sbKey    = document.getElementById('sbKey').value.trim();
+  const fyAppId = (document.getElementById('fyAppId')?.value || '').trim();
+  const fyAccessToken = (document.getElementById('fyAccessToken')?.value || '').trim();
+  const fyRedirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
 
   localStorage.setItem('ts_sb_url', sbUrl);
   localStorage.setItem('ts_sb_key', sbKey);
+  localStorage.setItem('ts_fy_app_id', fyAppId);
+  localStorage.setItem('ts_fy_access_token', fyAccessToken);
+  localStorage.setItem('ts_fy_redirect', fyRedirect);
 
   if (!sbUrl || !sbKey) {
     showAlert('connectAlert', 'err', 'Supabase URL aur Key required hain');
+    return;
+  }
+
+  if ((fyAppId && !fyAccessToken) || (!fyAppId && fyAccessToken)) {
+    showAlert('connectAlert', 'err', 'Manual override ke liye FYERS App ID aur Access Token dono do, ya dono blank chhodo.');
     return;
   }
 

@@ -147,9 +147,9 @@ App mein jaao -> Setup page:
 Connect button dabao -> ho gaya! 🎉
 
 Important:
-- Fyers App ID aur Fyers Access Token frontend me enter mat karo.
-- Ye dono values sirf Supabase server secrets me rahengi.
-- Agar token expire ho jaye to sirf admin token rotate karega (users ko dobara token nahi dena padega).
+- Default mode: Fyers App ID aur Fyers Access Token frontend me enter mat karo (server secret mode best hai).
+- Optional backup mode: Setup page me "Generate Access Token" button aur manual override fields available hain.
+- Agar server token expire ho jaye, to admin manual override use karke turant app chala sakta hai.
 
 ---
 
