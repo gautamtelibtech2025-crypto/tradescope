@@ -608,21 +608,42 @@ function resetSavedSetup() {
   showAlert('connectAlert', 'info', 'Saved setup reset ho gaya. Ab fresh Supabase URL/Key dalo.');
 }
 
-function openFyersTokenPage() {
-  const appId = (document.getElementById('fyAppId')?.value || '').trim();
-  const redirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
-
+async function openFyersTokenPage() {
+  let appId = (document.getElementById('fyAppId')?.value || '').trim();
+  
+  // अगर app ID input में नहीं है तो backend से fetch करने की कोशिश करो
   if (!appId) {
-    showAlert('connectAlert', 'err', 'Generate token se pehle FYERS App ID daalo.');
+    showAlert('connectAlert', 'info', '⏳ Backend से FYERS App ID fetch ho rahi hai...');
+    const configUrl = DEFAULT_SB_PROJECT_URL + '/functions/v1/config';
+    try {
+      const resp = await fetch(configUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await resp.json();
+      if (data.fyers_app_id) {
+        appId = data.fyers_app_id;
+        document.getElementById('fyAppId').value = appId;
+        localStorage.setItem('ts_fy_app_id', appId);
+      }
+    } catch (e) {
+      console.log('Config fetch failed:', e.message);
+    }
+  }
+  
+  if (!appId) {
+    showAlert('connectAlert', 'err', 'FYERS App ID backend में set नहीं है। Admin से contact करो या manually daalo.');
     return;
   }
-
+  
+  const redirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
+  
   localStorage.setItem('ts_fy_app_id', appId);
   localStorage.setItem('ts_fy_redirect', redirect);
-
+  
   const authUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${encodeURIComponent(appId)}&redirect_uri=${encodeURIComponent(redirect)}&response_type=code&state=tradescope`;
   window.open(authUrl, '_blank', 'noopener,noreferrer');
-  showAlert('connectAlert', 'info', 'FYERS auth page nayi tab me open ho gayi. Token generate karke yahan paste kar sakte ho.');
+  showAlert('connectAlert', 'info', 'FYERS auth page nayi tab me open ho gayi. Login karke approve karο, PowerShell automatically token capture kar lega.');
 }
 
 async function fetchConfigFromBackend() {
@@ -637,12 +658,18 @@ async function fetchConfigFromBackend() {
     if (data.success && data.supabase_url && data.supabase_anon_key) {
       const sbUrlEl = document.getElementById('sbUrl');
       const sbKeyEl = document.getElementById('sbKey');
+      const fyAppIdEl = document.getElementById('fyAppId');
+      
       if (sbUrlEl) sbUrlEl.value = data.supabase_url;
       if (sbKeyEl) sbKeyEl.value = data.supabase_anon_key;
+      if (fyAppIdEl && data.fyers_app_id) fyAppIdEl.value = data.fyers_app_id;
+      
       localStorage.setItem('ts_sb_url', data.supabase_url);
       localStorage.setItem('ts_sb_key', data.supabase_anon_key);
-      showAlert('connectAlert', 'ok', '✓ Backend config loaded — Supabase auto-set');
-      return { url: data.supabase_url, key: data.supabase_anon_key };
+      if (data.fyers_app_id) localStorage.setItem('ts_fy_app_id', data.fyers_app_id);
+      
+      showAlert('connectAlert', 'ok', '✓ Backend config loaded — Supabase aur FYERS auto-set');
+      return { url: data.supabase_url, key: data.supabase_anon_key, appId: data.fyers_app_id };
     } else {
       showAlert('connectAlert', 'err', '⚠ Backend config nahi set hai — manual entry karni padegi ya admin se pocho');
       return null;

@@ -12,12 +12,14 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    const fyersAppId = Deno.env.get("FYERS_APP_ID") || "";
 
     return new Response(
       JSON.stringify({
         success: true,
         supabase_url: supabaseUrl,
         supabase_anon_key: supabaseAnonKey,
+        fyers_app_id: fyersAppId,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
