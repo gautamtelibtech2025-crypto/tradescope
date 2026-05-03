@@ -624,6 +624,28 @@ function openFyersTokenPage() {
   showAlert('connectAlert', 'info', 'FYERS auth page nayi tab me open ho gayi. Token generate karke yahan paste kar sakte ho.');
 }
 
+async function fetchConfigFromBackend() {
+  try {
+    const resp = await fetch('/functions/v1/config', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await resp.json();
+    if (data.success && data.supabase_url && data.supabase_anon_key) {
+      const sbUrlEl = document.getElementById('sbUrl');
+      const sbKeyEl = document.getElementById('sbKey');
+      if (sbUrlEl) sbUrlEl.value = data.supabase_url;
+      if (sbKeyEl) sbKeyEl.value = data.supabase_anon_key;
+      localStorage.setItem('ts_sb_url', data.supabase_url);
+      localStorage.setItem('ts_sb_key', data.supabase_anon_key);
+      return { url: data.supabase_url, key: data.supabase_anon_key };
+    }
+  } catch (e) {
+    console.log('Config fetch failed (optional):', e.message);
+  }
+  return null;
+}
+
 async function autoConnectIfSaved() {
   const savedUrl = (localStorage.getItem('ts_sb_url') || '').trim();
   const savedKey = (localStorage.getItem('ts_sb_key') || '').trim();
@@ -1063,7 +1085,12 @@ function showAlert(id, type, msg) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initCredentials();
-  await autoConnectIfSaved();
+  const configFromBackend = await fetchConfigFromBackend();
+  if (!configFromBackend) {
+    await autoConnectIfSaved();
+  } else {
+    await connectApp();
+  }
 });
 </script>
 </body>

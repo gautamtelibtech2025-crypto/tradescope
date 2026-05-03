@@ -77,7 +77,24 @@ supabase functions deploy scan-rsi
 supabase functions deploy scan-pattern
 supabase functions deploy scan-intraday
 supabase functions deploy scan-combo
+supabase functions deploy config
 ```
+
+---
+
+## Step 5b — Backend Secrets Set Karo (One-Time Admin Setup)
+
+Jisse frontend automatically backend se URL + Key fetch kare aur bar-bar manual entry na karna pade:
+
+```bash
+# Apna actual Supabase project URL aur publishable key daalo
+supabase secrets set SUPABASE_URL="https://your-project-ref.supabase.co"
+supabase secrets set SUPABASE_ANON_KEY="sb_publishable_YOUR_KEY_HERE"
+supabase secrets set FYERS_APP_ID="XXXXX-100"
+supabase secrets set FYERS_ACCESS_TOKEN="your-current-access-token"
+```
+
+Bas ek baar set kar do. Ab frontend automatically backend se config fetch karega aur auto-connect hoga.
 
 ---
 
@@ -116,14 +133,12 @@ Ya VS Code mein **Live Server** extension se open karo.
 4. GitHub repo connect karo aur same repo choose karo.
 5. Render `render.yaml` read karega aur static web service create karega.
 6. Deploy complete hone ke baad Render URL milega (example: `https://tradescope-frontend.onrender.com`).
-7. Live URL open karke Setup page mein:
-   - Supabase URL daalo
-   - Supabase publishable key daalo
-   - Connect dabao
+7. Live URL open karke automatically setup ho jayega — config backend se auto-fetch hota hai!
 
 Notes:
 - Tunnel ki zarurat nahi hai.
-- `FYERS_APP_ID` aur `FYERS_ACCESS_TOKEN` sirf Supabase secrets mein rahenge (frontend mein nahi).
+- SUPABASE_URL aur SUPABASE_ANON_KEY backend secrets me set hone ke baad frontend automatically fetch karega (manual paste nahi karna padega).
+- `FYERS_APP_ID` aur `FYERS_ACCESS_TOKEN` bhi backend secrets me rahengi; frontend me manual entry optional hai (fallback mode).
 - Agar `tradescope-frontend.html` mein change karo, bas Git push karo; Render auto redeploy karega.
 
 ### Daily Auto Launch (Optional but Recommended)
