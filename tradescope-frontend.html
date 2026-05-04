@@ -529,11 +529,14 @@ const scanResults = {};
 const DEFAULT_SB_URL = '';
 const DEFAULT_SB_KEY = 'sb_publishable_RvP26Tv0JsvZkLGBvi8B5A_MycDvpbj';
 const DEFAULT_SB_PROJECT_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co'; // Backend config fetched from here
+const RENDER_FYERS_REDIRECT = 'https://tradescope-frontend.onrender.com/tradescope-frontend.html';
 const DEFAULT_FYERS_REDIRECT = (() => {
   try {
-    return `${window.location.origin}${window.location.pathname}`;
+    const isRender = window.location.hostname === 'tradescope-frontend.onrender.com';
+    if (isRender) return RENDER_FYERS_REDIRECT;
+    return `${window.location.origin}${window.location.pathname || '/tradescope-frontend.html'}`;
   } catch {
-    return 'https://tradescope-frontend.onrender.com/tradescope-frontend.html';
+    return RENDER_FYERS_REDIRECT;
   }
 })();
 const KNOWN_BAD_SB_HOSTS = new Set([]);
@@ -566,12 +569,30 @@ function initCredentials() {
     // Ignore malformed saved URL and continue with normal initialization.
   }
 
+  let savedRedirect = localStorage.getItem('ts_fy_redirect') || DEFAULT_FYERS_REDIRECT;
+  try {
+    const redirectUrl = new URL(savedRedirect);
+    const isOldRenderRoot =
+      redirectUrl.hostname === 'tradescope-frontend.onrender.com' &&
+      (redirectUrl.pathname === '/' || redirectUrl.pathname === '');
+    const isOldLocalHelper =
+      redirectUrl.hostname === '127.0.0.1' ||
+      redirectUrl.hostname === 'localhost';
+    if (window.location.hostname === 'tradescope-frontend.onrender.com' && (isOldRenderRoot || isOldLocalHelper)) {
+      savedRedirect = DEFAULT_FYERS_REDIRECT;
+      localStorage.setItem('ts_fy_redirect', savedRedirect);
+    }
+  } catch {
+    savedRedirect = DEFAULT_FYERS_REDIRECT;
+    localStorage.setItem('ts_fy_redirect', savedRedirect);
+  }
+
   const saved = {
     sbUrl: localStorage.getItem('ts_sb_url') || DEFAULT_SB_URL || DEFAULT_SB_PROJECT_URL,
     sbKey: localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY,
     fyAppId: localStorage.getItem('ts_fy_app_id') || '',
     fyAccessToken: localStorage.getItem('ts_fy_access_token') || '',
-    fyRedirect: localStorage.getItem('ts_fy_redirect') || DEFAULT_FYERS_REDIRECT,
+    fyRedirect: savedRedirect,
   };
 
   document.getElementById('sbUrl').value = saved.sbUrl;
