@@ -578,7 +578,7 @@ function initCredentials() {
     const isOldLocalHelper =
       redirectUrl.hostname === '127.0.0.1' ||
       redirectUrl.hostname === 'localhost';
-    if (window.location.hostname === 'tradescope-frontend.onrender.com' && (isOldRenderRoot || isOldLocalHelper)) {
+    if (window.location.hostname === 'tradescope-frontend.onrender.com') {
       savedRedirect = DEFAULT_FYERS_REDIRECT;
       localStorage.setItem('ts_fy_redirect', savedRedirect);
     }
@@ -779,7 +779,12 @@ async function openFyersTokenPage() {
     return;
   }
   
-  const redirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
+  let redirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
+  if (window.location.hostname === 'tradescope-frontend.onrender.com') {
+    redirect = RENDER_FYERS_REDIRECT;
+    const redirectEl = document.getElementById('fyRedirect');
+    if (redirectEl) redirectEl.value = redirect;
+  }
   
   localStorage.setItem('ts_fy_app_id', appId);
   localStorage.setItem('ts_fy_redirect', redirect);
