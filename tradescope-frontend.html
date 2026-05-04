@@ -185,7 +185,26 @@ tbody td { padding:10px 12px; white-space:nowrap; }
         <div class="card">
           <div style="font-weight:600;margin-bottom:14px;">🔑 Credentials</div>
           <div style="display:flex;flex-direction:column;gap:12px;">
-            <p style="font-size:13px;color:#8a97b5;line-height:1.5;">✓ सभी credentials backend से automatically load होते हैं (Supabase, FYERS App ID)।<br/>कुछ manually enter करने की जरूरत नहीं।</p>
+            <p style="font-size:13px;color:#8a97b5;line-height:1.5;">✓ Credentials backend से auto-load होंगे।<br/>अगर backend unavailable हो, तो नीचे manual fallback use कर सकते हो (same as old flow).</p>
+
+            <div style="display:grid;grid-template-columns:1fr;gap:10px;">
+              <div>
+                <label class="lbl">Supabase URL (manual fallback)</label>
+                <input class="inp" id="sbUrl" placeholder="https://xxxx.supabase.co">
+              </div>
+              <div>
+                <label class="lbl">Supabase Anon Key (manual fallback)</label>
+                <input class="inp" id="sbKey" placeholder="eyJhbGciOi...">
+              </div>
+              <div>
+                <label class="lbl">FYERS App ID (manual override)</label>
+                <input class="inp" id="fyAppId" placeholder="ABCD1234-100">
+              </div>
+              <div>
+                <label class="lbl">FYERS Access Token (auto/manual)</label>
+                <input class="inp" id="fyAccessToken" placeholder="Paste token or auto-fill from callback URL">
+              </div>
+            </div>
             
             <div style="margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
               <div style="font-size:12px;color:#8a97b5;margin-bottom:10px;">FYERS Token Management (optional - manual override)</div>
@@ -508,10 +527,16 @@ let connected = false;
 let scanActive = false;
 const scanResults = {};
 const DEFAULT_SB_URL = '';
-const DEFAULT_SB_KEY = '';
+const DEFAULT_SB_KEY = 'sb_publishable_RvP26Tv0JsvZkLGBvi8B5A_MycDvpbj';
 const DEFAULT_SB_PROJECT_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co'; // Backend config fetched from here
-const DEFAULT_FYERS_REDIRECT = 'http://127.0.0.1:17863/callback';
-const KNOWN_BAD_SB_HOSTS = new Set(['ebsjzvjdwljahmrpxkmc.supabase.co']);
+const DEFAULT_FYERS_REDIRECT = (() => {
+  try {
+    return `${window.location.origin}${window.location.pathname}`;
+  } catch {
+    return 'https://tradescope-frontend.onrender.com/tradescope-frontend.html';
+  }
+})();
+const KNOWN_BAD_SB_HOSTS = new Set([]);
 const INTRADAY_FO_SYMBOLS = [
   'NSE:RELIANCE-EQ','NSE:HDFCBANK-EQ','NSE:ICICIBANK-EQ','NSE:SBIN-EQ','NSE:AXISBANK-EQ','NSE:KOTAKBANK-EQ',
   'NSE:BAJFINANCE-EQ','NSE:BAJAJFINSV-EQ','NSE:INFY-EQ','NSE:TCS-EQ','NSE:WIPRO-EQ','NSE:HCLTECH-EQ',
@@ -542,7 +567,7 @@ function initCredentials() {
   }
 
   const saved = {
-    sbUrl: localStorage.getItem('ts_sb_url') || DEFAULT_SB_URL,
+    sbUrl: localStorage.getItem('ts_sb_url') || DEFAULT_SB_URL || DEFAULT_SB_PROJECT_URL,
     sbKey: localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY,
     fyAppId: localStorage.getItem('ts_fy_app_id') || '',
     fyAccessToken: localStorage.getItem('ts_fy_access_token') || '',
@@ -556,9 +581,118 @@ function initCredentials() {
   document.getElementById('fyRedirect').value = saved.fyRedirect;
 }
 
+async function exchangeFyersAuthCode(authCode, appId) {
+  const config = await fetchConfigFromBackend({ silent: true });
+  const resolvedUrl = (config?.url || localStorage.getItem('ts_sb_url') || DEFAULT_SB_PROJECT_URL || '').trim().replace(/\/$/, '');
+  const resolvedKey = (config?.key || localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY || '').trim();
+
+  if (!resolvedUrl || !resolvedKey) {
+    throw new Error('Supabase URL/Key missing. Backend config ya publishable key set karo.');
+  }
+
+  const res = await fetch(`${resolvedUrl}/functions/v1/fyers-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${resolvedKey}`,
+      'apikey': resolvedKey,
+    },
+    body: JSON.stringify({ auth_code: authCode, app_id: appId || undefined }),
+  });
+
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { success: false, message: text || 'Invalid token response from server.' };
+  }
+
+  if (!res.ok || !data.success || !data.access_token) {
+    throw new Error(data.message || `FYERS token exchange failed (${res.status})`);
+  }
+
+  return data;
+}
+
+async function syncTokenFromUrl() {
+  try {
+    const searchParams = new URLSearchParams(window.location.search || '');
+    const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+
+    const authCodeFromUrl =
+      searchParams.get('auth_code') ||
+      searchParams.get('code') ||
+      hashParams.get('auth_code') ||
+      hashParams.get('code') ||
+      '';
+
+    const tokenFromUrl =
+      searchParams.get('access_token') ||
+      searchParams.get('token') ||
+      hashParams.get('access_token') ||
+      hashParams.get('token') ||
+      '';
+
+    const appIdFromUrl =
+      searchParams.get('app_id') ||
+      searchParams.get('client_id') ||
+      hashParams.get('app_id') ||
+      hashParams.get('client_id') ||
+      '';
+
+    if (appIdFromUrl) {
+      const appEl = document.getElementById('fyAppId');
+      if (appEl) appEl.value = appIdFromUrl;
+      localStorage.setItem('ts_fy_app_id', appIdFromUrl);
+    }
+
+    if (tokenFromUrl) {
+      const tokenEl = document.getElementById('fyAccessToken');
+      if (tokenEl) tokenEl.value = tokenFromUrl;
+      localStorage.setItem('ts_fy_access_token', tokenFromUrl);
+      showAlert('connectAlert', 'ok', 'FYERS access token auto-fill ho gaya. Ab Connect dabao.');
+    }
+
+    if (authCodeFromUrl) {
+      showAlert('connectAlert', 'info', 'FYERS auth code mila. Access token generate ho raha hai...');
+      const tokenData = await exchangeFyersAuthCode(authCodeFromUrl, appIdFromUrl);
+      const tokenEl = document.getElementById('fyAccessToken');
+      const appEl = document.getElementById('fyAppId');
+
+      if (tokenEl) tokenEl.value = tokenData.access_token;
+      if (appEl && tokenData.app_id) appEl.value = tokenData.app_id;
+
+      localStorage.setItem('ts_fy_access_token', tokenData.access_token);
+      if (tokenData.refresh_token) localStorage.setItem('ts_fy_refresh_token', tokenData.refresh_token);
+      if (tokenData.app_id) localStorage.setItem('ts_fy_app_id', tokenData.app_id);
+
+      history.replaceState({}, document.title, window.location.pathname);
+      showAlert('connectAlert', 'ok', 'FYERS token generate ho gaya. Auto-connect kar rahe hain...');
+      await connectApp();
+      return true;
+    }
+
+    if (tokenFromUrl || appIdFromUrl) {
+      history.replaceState({}, document.title, window.location.pathname);
+    }
+  } catch (e) {
+    showAlert('connectAlert', 'err', 'FYERS token auto-generate failed: ' + (e.message || 'Auth code dobara generate karo.'));
+  }
+  return false;
+}
+
 function getFyersOverrideCredentials() {
-  // अब सब कुछ backend से आता है - manual override नहीं
-  return {};
+  const appId = (document.getElementById('fyAppId')?.value || localStorage.getItem('ts_fy_app_id') || '').trim();
+  const accessToken = (document.getElementById('fyAccessToken')?.value || localStorage.getItem('ts_fy_access_token') || '').trim();
+
+  if (appId) localStorage.setItem('ts_fy_app_id', appId);
+  if (accessToken) localStorage.setItem('ts_fy_access_token', accessToken);
+
+  const override = {};
+  if (appId) override.app_id = appId;
+  if (accessToken) override.access_token = accessToken;
+  return override;
 }
 
 function clearManualToken() {
@@ -602,7 +736,11 @@ async function openFyersTokenPage() {
     try {
       const resp = await fetch(configUrl, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${DEFAULT_SB_KEY}`,
+          'apikey': DEFAULT_SB_KEY,
+        },
       });
       const data = await resp.json();
       if (data.fyers_app_id) {
@@ -630,13 +768,18 @@ async function openFyersTokenPage() {
   showAlert('connectAlert', 'info', 'FYERS auth page nayi tab me open ho gayi. Login karke approve karο, PowerShell automatically token capture kar lega.');
 }
 
-async function fetchConfigFromBackend() {
+async function fetchConfigFromBackend(options = {}) {
+  const silent = !!options.silent;
   try {
     showAlert('connectAlert', 'info', '⏳ Backend config load ho raha hai...');
     const configUrl = DEFAULT_SB_PROJECT_URL + '/functions/v1/config';
     const resp = await fetch(configUrl, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEFAULT_SB_KEY}`,
+        'apikey': DEFAULT_SB_KEY,
+      },
     });
     const data = await resp.json();
     if (data.success && data.supabase_url && data.supabase_anon_key) {
@@ -769,26 +912,58 @@ function toggleMobileNav() {
 
 // ── CONNECT ──
 async function connectApp() {
-  // पहले backend से credentials fetch करो
+  const sbUrlEl = document.getElementById('sbUrl');
+  const sbKeyEl = document.getElementById('sbKey');
+  const fyAppIdEl = document.getElementById('fyAppId');
+  const manualSbUrl = (sbUrlEl?.value || '').trim();
+  const manualSbKey = (sbKeyEl?.value || '').trim();
+
+  let backendUrl = '';
+  let backendKey = '';
+
+  // पहले backend से credentials fetch करो, fail हो तो manual fallback use करो
   try {
     const configUrl = DEFAULT_SB_PROJECT_URL + '/functions/v1/config';
     const resp = await fetch(configUrl, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEFAULT_SB_KEY}`,
+        'apikey': DEFAULT_SB_KEY,
+      },
     });
     const data = await resp.json();
-    
-    if (!data.success || !data.supabase_url || !data.supabase_anon_key) {
-      showAlert('connectAlert', 'err', 'Backend से credentials fetch नहीं हुए। Admin से contact करो।');
-      return;
+
+    if (data.success && data.supabase_url && data.supabase_anon_key) {
+      backendUrl = String(data.supabase_url || '').trim();
+      backendKey = String(data.supabase_anon_key || '').trim();
+
+      if (sbUrlEl) sbUrlEl.value = backendUrl;
+      if (sbKeyEl) sbKeyEl.value = backendKey;
+      if (fyAppIdEl && data.fyers_app_id && !fyAppIdEl.value) {
+        fyAppIdEl.value = data.fyers_app_id;
+      }
+
+      localStorage.setItem('ts_sb_url', backendUrl);
+      localStorage.setItem('ts_sb_key', backendKey);
+      if (data.fyers_app_id) localStorage.setItem('ts_fy_app_id', data.fyers_app_id);
+    } else {
+      showAlert('connectAlert', 'info', 'Backend credentials unavailable. Manual fallback use kar rahe hain.');
     }
-    
-    sbUrl = data.supabase_url.replace(/\/$/, '');
-    sbKey = data.supabase_anon_key;
   } catch (e) {
-    showAlert('connectAlert', 'err', 'Backend से credentials fetch fail: ' + e.message);
+    showAlert('connectAlert', 'info', 'Backend fetch fail hua. Manual fallback use kar rahe hain.');
+  }
+
+  const chosenSbUrl = (backendUrl || manualSbUrl || localStorage.getItem('ts_sb_url') || '').trim();
+  const chosenSbKey = (backendKey || manualSbKey || localStorage.getItem('ts_sb_key') || '').trim();
+
+  if (!chosenSbUrl || !chosenSbKey) {
+    showAlert('connectAlert', 'err', 'Supabase URL/Key missing. Backend fix karo ya manual values dalo.');
     return;
   }
+
+  sbUrl = chosenSbUrl.replace(/\/$/, '');
+  sbKey = chosenSbKey;
   
   const fyRedirect = (document.getElementById('fyRedirect')?.value || '').trim() || DEFAULT_FYERS_REDIRECT;
   localStorage.setItem('ts_sb_url', sbUrl);
@@ -1105,11 +1280,31 @@ function showAlert(id, type, msg) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initCredentials();
+  const handledFyersCallback = await syncTokenFromUrl();
+  if (handledFyersCallback) return;
+
+  // Token field changes ko immediately persist karo.
+  const tokenEl = document.getElementById('fyAccessToken');
+  if (tokenEl) {
+    tokenEl.addEventListener('change', () => {
+      const token = (tokenEl.value || '').trim();
+      if (token) localStorage.setItem('ts_fy_access_token', token);
+      else localStorage.removeItem('ts_fy_access_token');
+    });
+  }
+
   const configFromBackend = await fetchConfigFromBackend();
-  if (!configFromBackend) {
-    await autoConnectIfSaved();
-  } else {
+  if (configFromBackend) {
     await connectApp();
+    return;
+  }
+
+  const hasSavedSupabase = !!((localStorage.getItem('ts_sb_url') || '').trim() && (localStorage.getItem('ts_sb_key') || '').trim());
+  if (hasSavedSupabase) {
+    showAlert('connectAlert', 'info', 'Saved manual credentials mil gaye. Auto-connect try kar rahe hain...');
+    await connectApp();
+  } else {
+    showAlert('connectAlert', 'info', 'Backend unavailable. Manual credentials dalo aur Connect dabao.');
   }
 });
 </script>

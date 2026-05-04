@@ -78,6 +78,7 @@ supabase functions deploy scan-pattern
 supabase functions deploy scan-intraday
 supabase functions deploy scan-combo
 supabase functions deploy config
+supabase functions deploy fyers-token
 ```
 
 ---
@@ -93,6 +94,7 @@ Jisse frontend automatically backend se URL + Key fetch kare aur bar-bar manual 
 supabase secrets set SUPABASE_URL="https://your-project-ref.supabase.co"
 supabase secrets set SUPABASE_ANON_KEY="sb_publishable_YOUR_KEY_HERE"
 supabase secrets set FYERS_APP_ID="XXXXX-100"
+supabase secrets set FYERS_SECRET_ID="your-fyers-secret-id"
 supabase secrets set FYERS_ACCESS_TOKEN="your-current-access-token"
 ```
 
@@ -106,7 +108,8 @@ Ab frontend automatically `/config` endpoint से ये values fetch karega a
 2. Login karo
 3. **Create App** karo:
    - App Name: TradeScope
-   - Redirect URL: `http://127.0.0.1:17863/callback`
+   - Redirect URL for live button: `https://YOUR-RENDER-DOMAIN/tradescope-frontend.html`
+   - Redirect URL for local PowerShell helper: `http://127.0.0.1:17863/callback`
 4. **App ID** mil jaayega (e.g. `XXXXX-100`)
 
 ### Daily FYERS Token Generation (Fully Automated)

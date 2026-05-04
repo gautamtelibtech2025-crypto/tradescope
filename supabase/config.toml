@@ -1,0 +1,5 @@
+[functions.config]
+verify_jwt = false
+
+[functions.fyers-token]
+verify_jwt = false
