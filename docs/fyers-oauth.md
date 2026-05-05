@@ -94,6 +94,15 @@ Local helper:
 .\scripts\fyers-token.ps1
 ```
 
+Python helper:
+
+```bash
+set FYERS_APP_ID=YOUR_APP_ID-100
+set FYERS_SECRET_ID=YOUR_SECRET_ID
+set FYERS_REDIRECT_URI=https://tradescope-frontend.onrender.com/auth/callback
+python scripts/fyers_token.py --auth-code PASTE_AUTH_CODE
+```
+
 Direct auth-code fallback:
 
 ```powershell
