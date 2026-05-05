@@ -607,6 +607,33 @@ function initDevAuthControls() {
   if (panel && enabled) panel.style.display = 'block';
 }
 
+function extractFyersAccessToken(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+
+  if (/^Bearer\s+/i.test(value)) {
+    return value.replace(/^Bearer\s+/i, '').trim();
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === 'object') {
+      const token = String(parsed.access_token || parsed.accessToken || '').trim();
+      if (token) return token;
+    }
+  } catch {
+    // Not JSON; continue with string extraction heuristics.
+  }
+
+  const directMatch = value.match(/(?:^|["'\s,;{])(eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)(?:$|["'\s,;}])/);
+  if (directMatch) return directMatch[1].trim();
+
+  const explicitMatch = value.match(/(?:access_token|token)\s*[:=]\s*["']?([^"'\s,}]+)["']?/i);
+  if (explicitMatch) return explicitMatch[1].trim();
+
+  return value;
+}
+
 async function exchangeFyersAuthCode(authCode, appId) {
   const apiBaseUrl = (window.TRADESCOPE_API_BASE_URL || localStorage.getItem('ts_backend_api_url') || '').trim().replace(/\/$/, '');
   if (apiBaseUrl) {
@@ -697,8 +724,9 @@ async function syncTokenFromUrl() {
     }
 
     if (tokenFromUrl) {
+      const normalizedToken = extractFyersAccessToken(tokenFromUrl);
       const tokenEl = document.getElementById('fyAccessToken');
-      if (tokenEl) tokenEl.value = tokenFromUrl;
+      if (tokenEl) tokenEl.value = normalizedToken;
       localStorage.removeItem('ts_fy_access_token');
       showAlert('connectAlert', 'ok', 'FYERS access token session ke liye auto-fill ho gaya. Server secret mode reload ke baad default rahega.');
     }
@@ -710,7 +738,7 @@ async function syncTokenFromUrl() {
 
       if (tokenData.access_token) {
         const tokenEl = document.getElementById('fyAccessToken');
-        if (tokenEl) tokenEl.value = tokenData.access_token;
+        if (tokenEl) tokenEl.value = extractFyersAccessToken(tokenData.access_token);
       }
       if (appEl && tokenData.app_id) appEl.value = tokenData.app_id;
 
@@ -735,7 +763,10 @@ async function syncTokenFromUrl() {
 
 function getFyersOverrideCredentials() {
   const appId = (document.getElementById('fyAppId')?.value || localStorage.getItem('ts_fy_app_id') || '').trim();
-  const accessToken = (document.getElementById('fyAccessToken')?.value || '').trim();
+  const accessToken = extractFyersAccessToken(document.getElementById('fyAccessToken')?.value || '');
+
+  const tokenEl = document.getElementById('fyAccessToken');
+  if (tokenEl) tokenEl.value = accessToken;
 
   if (appId) localStorage.setItem('ts_fy_app_id', appId);
   localStorage.removeItem('ts_fy_access_token');

@@ -103,6 +103,8 @@ set FYERS_REDIRECT_URI=https://tradescope-frontend.onrender.com/auth/callback
 python scripts/fyers_token.py --auth-code PASTE_AUTH_CODE
 ```
 
+If FYERS returns both tokens, use only `access_token`; `refresh_token` is not accepted by the TradeScope scanners.
+
 Direct auth-code fallback:
 
 ```powershell
