@@ -591,9 +591,11 @@ function initCredentials() {
     sbUrl: localStorage.getItem('ts_sb_url') || DEFAULT_SB_URL || DEFAULT_SB_PROJECT_URL,
     sbKey: localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY,
     fyAppId: localStorage.getItem('ts_fy_app_id') || '',
-    fyAccessToken: localStorage.getItem('ts_fy_access_token') || '',
+    fyAccessToken: '',
     fyRedirect: savedRedirect,
   };
+  localStorage.removeItem('ts_fy_access_token');
+  localStorage.removeItem('ts_fy_refresh_token');
 
   document.getElementById('sbUrl').value = saved.sbUrl;
   document.getElementById('sbKey').value = saved.sbKey;
@@ -671,8 +673,8 @@ async function syncTokenFromUrl() {
     if (tokenFromUrl) {
       const tokenEl = document.getElementById('fyAccessToken');
       if (tokenEl) tokenEl.value = tokenFromUrl;
-      localStorage.setItem('ts_fy_access_token', tokenFromUrl);
-      showAlert('connectAlert', 'ok', 'FYERS access token auto-fill ho gaya. Ab Connect dabao.');
+      localStorage.removeItem('ts_fy_access_token');
+      showAlert('connectAlert', 'ok', 'FYERS access token session ke liye auto-fill ho gaya. Server secret mode reload ke baad default rahega.');
     }
 
     if (authCodeFromUrl) {
@@ -684,8 +686,8 @@ async function syncTokenFromUrl() {
       if (tokenEl) tokenEl.value = tokenData.access_token;
       if (appEl && tokenData.app_id) appEl.value = tokenData.app_id;
 
-      localStorage.setItem('ts_fy_access_token', tokenData.access_token);
-      if (tokenData.refresh_token) localStorage.setItem('ts_fy_refresh_token', tokenData.refresh_token);
+      localStorage.removeItem('ts_fy_access_token');
+      localStorage.removeItem('ts_fy_refresh_token');
       if (tokenData.app_id) localStorage.setItem('ts_fy_app_id', tokenData.app_id);
 
       history.replaceState({}, document.title, window.location.pathname);
@@ -705,14 +707,17 @@ async function syncTokenFromUrl() {
 
 function getFyersOverrideCredentials() {
   const appId = (document.getElementById('fyAppId')?.value || localStorage.getItem('ts_fy_app_id') || '').trim();
-  const accessToken = (document.getElementById('fyAccessToken')?.value || localStorage.getItem('ts_fy_access_token') || '').trim();
+  const accessToken = (document.getElementById('fyAccessToken')?.value || '').trim();
 
   if (appId) localStorage.setItem('ts_fy_app_id', appId);
-  if (accessToken) localStorage.setItem('ts_fy_access_token', accessToken);
+  localStorage.removeItem('ts_fy_access_token');
+  localStorage.removeItem('ts_fy_refresh_token');
 
   const override = {};
-  if (appId) override.app_id = appId;
-  if (accessToken) override.access_token = accessToken;
+  if (accessToken) {
+    if (appId) override.app_id = appId;
+    override.access_token = accessToken;
+  }
   return override;
 }
 
@@ -1309,13 +1314,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const handledFyersCallback = await syncTokenFromUrl();
   if (handledFyersCallback) return;
 
-  // Token field changes ko immediately persist karo.
+  // Manual token ko browser storage me save mat karo; warna expired token backend secret ko override karta hai.
   const tokenEl = document.getElementById('fyAccessToken');
   if (tokenEl) {
-    tokenEl.addEventListener('change', () => {
-      const token = (tokenEl.value || '').trim();
-      if (token) localStorage.setItem('ts_fy_access_token', token);
-      else localStorage.removeItem('ts_fy_access_token');
+    tokenEl.addEventListener('input', () => {
+      localStorage.removeItem('ts_fy_access_token');
+      localStorage.removeItem('ts_fy_refresh_token');
     });
   }
 
