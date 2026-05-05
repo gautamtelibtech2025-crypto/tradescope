@@ -529,7 +529,7 @@ const scanResults = {};
 const DEFAULT_SB_URL = '';
 const DEFAULT_SB_KEY = 'sb_publishable_RvP26Tv0JsvZkLGBvi8B5A_MycDvpbj';
 const DEFAULT_SB_PROJECT_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co'; // Backend config fetched from here
-const RENDER_FYERS_REDIRECT = 'https://tradescope-frontend.onrender.com/tradescope-frontend.html';
+const RENDER_FYERS_REDIRECT = 'https://tradescope-frontend.onrender.com/';
 const DEFAULT_FYERS_REDIRECT = (() => {
   try {
     const isRender = window.location.hostname === 'tradescope-frontend.onrender.com';
@@ -572,9 +572,6 @@ function initCredentials() {
   let savedRedirect = localStorage.getItem('ts_fy_redirect') || DEFAULT_FYERS_REDIRECT;
   try {
     const redirectUrl = new URL(savedRedirect);
-    const isOldRenderRoot =
-      redirectUrl.hostname === 'tradescope-frontend.onrender.com' &&
-      (redirectUrl.pathname === '/' || redirectUrl.pathname === '');
     const isOldLocalHelper =
       redirectUrl.hostname === '127.0.0.1' ||
       redirectUrl.hostname === 'localhost';
