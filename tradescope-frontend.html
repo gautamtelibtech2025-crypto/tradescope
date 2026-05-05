@@ -206,7 +206,7 @@ tbody td { padding:10px 12px; white-space:nowrap; }
               </div>
             </div>
             
-            <div style="margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+            <div id="fyDevAuthPanel" style="display:none;margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
               <div style="font-size:12px;color:#8a97b5;margin-bottom:10px;">FYERS Token Management (optional - manual override)</div>
               <div style="display:flex;flex-direction:column;gap:10px;">
                 <div>
@@ -529,12 +529,12 @@ const scanResults = {};
 const DEFAULT_SB_URL = '';
 const DEFAULT_SB_KEY = 'sb_publishable_RvP26Tv0JsvZkLGBvi8B5A_MycDvpbj';
 const DEFAULT_SB_PROJECT_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co'; // Backend config fetched from here
-const RENDER_FYERS_REDIRECT = 'https://tradescope-frontend.onrender.com/';
+const RENDER_FYERS_REDIRECT = 'https://tradescope-frontend.onrender.com/auth/callback';
 const DEFAULT_FYERS_REDIRECT = (() => {
   try {
     const isRender = window.location.hostname === 'tradescope-frontend.onrender.com';
     if (isRender) return RENDER_FYERS_REDIRECT;
-    return `${window.location.origin}${window.location.pathname || '/tradescope-frontend.html'}`;
+    return `${window.location.origin}/auth/callback`;
   } catch {
     return RENDER_FYERS_REDIRECT;
   }
@@ -601,7 +601,36 @@ function initCredentials() {
   document.getElementById('fyRedirect').value = saved.fyRedirect;
 }
 
+function initDevAuthControls() {
+  const enabled = new URLSearchParams(window.location.search || '').get('devAuth') === '1';
+  const panel = document.getElementById('fyDevAuthPanel');
+  if (panel && enabled) panel.style.display = 'block';
+}
+
 async function exchangeFyersAuthCode(authCode, appId) {
+  const apiBaseUrl = (window.TRADESCOPE_API_BASE_URL || localStorage.getItem('ts_backend_api_url') || '').trim().replace(/\/$/, '');
+  if (apiBaseUrl) {
+    const res = await fetch(`${apiBaseUrl}/api/fyers/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: authCode, app_id: appId || undefined }),
+    });
+
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { success: false, message: text || 'Invalid token response from server.' };
+    }
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || `FYERS token exchange failed (${res.status})`);
+    }
+
+    return data;
+  }
+
   const config = await fetchConfigFromBackend({ silent: true });
   const resolvedUrl = (config?.url || localStorage.getItem('ts_sb_url') || DEFAULT_SB_PROJECT_URL || '').trim().replace(/\/$/, '');
   const resolvedKey = (config?.key || localStorage.getItem('ts_sb_key') || DEFAULT_SB_KEY || '').trim();
@@ -628,7 +657,7 @@ async function exchangeFyersAuthCode(authCode, appId) {
     data = { success: false, message: text || 'Invalid token response from server.' };
   }
 
-  if (!res.ok || !data.success || !data.access_token) {
+  if (!res.ok || !data.success) {
     throw new Error(data.message || `FYERS token exchange failed (${res.status})`);
   }
 
@@ -677,10 +706,12 @@ async function syncTokenFromUrl() {
     if (authCodeFromUrl) {
       showAlert('connectAlert', 'info', 'FYERS auth code mila. Access token generate ho raha hai...');
       const tokenData = await exchangeFyersAuthCode(authCodeFromUrl, appIdFromUrl);
-      const tokenEl = document.getElementById('fyAccessToken');
       const appEl = document.getElementById('fyAppId');
 
-      if (tokenEl) tokenEl.value = tokenData.access_token;
+      if (tokenData.access_token) {
+        const tokenEl = document.getElementById('fyAccessToken');
+        if (tokenEl) tokenEl.value = tokenData.access_token;
+      }
       if (appEl && tokenData.app_id) appEl.value = tokenData.app_id;
 
       localStorage.removeItem('ts_fy_access_token');
@@ -688,7 +719,7 @@ async function syncTokenFromUrl() {
       if (tokenData.app_id) localStorage.setItem('ts_fy_app_id', tokenData.app_id);
 
       history.replaceState({}, document.title, window.location.pathname);
-      showAlert('connectAlert', 'ok', 'FYERS token generate ho gaya. Auto-connect kar rahe hain...');
+      showAlert('connectAlert', 'ok', 'FYERS token exchange complete. Auto-connect kar rahe hain...');
       await connectApp();
       return true;
     }
@@ -1308,6 +1339,7 @@ function showAlert(id, type, msg) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initCredentials();
+  initDevAuthControls();
   const handledFyersCallback = await syncTokenFromUrl();
   if (handledFyersCallback) return;
 

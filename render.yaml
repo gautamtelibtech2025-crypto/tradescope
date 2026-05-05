@@ -5,5 +5,5 @@ services:
     staticPublishPath: .
     routes:
       - type: rewrite
-        source: /
+        source: /*
         destination: /tradescope-frontend.html
