@@ -51,6 +51,23 @@ router.get("/login-url", (req, res, next) => {
   }
 });
 
+// Non-sensitive debug endpoint to check backend FYERS config presence (does NOT expose secrets)
+router.get('/debug', (req, res) => {
+  const appIdConfigured = Boolean(process.env.FYERS_APP_ID || getFyersTokenState().appId);
+  const redirectConfigured = Boolean(process.env.FYERS_REDIRECT_URI);
+  const frontendOrigin = process.env.FRONTEND_ORIGIN || null;
+  const tokenState = getFyersTokenState();
+
+  res.json({
+    success: true,
+    fyers_app_id_present: appIdConfigured,
+    redirect_uri_configured: redirectConfigured,
+    frontend_origin: frontendOrigin,
+    token_stored: hasFyersAccessToken(),
+    token_updated_at: tokenState.updatedAt || null,
+  });
+});
+
 router.post("/token", async (req, res, next) => {
   try {
     const authCode = String(req.body?.code || req.body?.auth_code || "").trim();
