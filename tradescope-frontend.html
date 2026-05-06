@@ -198,6 +198,10 @@ tbody td { padding:10px 12px; white-space:nowrap; }
                 <input class="inp" id="sbKey" placeholder="eyJhbGciOi...">
               </div>
               <div>
+                <label class="lbl">Backend API URL (optional)</label>
+                <input class="inp" id="backendUrl" placeholder="https://api.your-backend.com">
+              </div>
+              <div>
                 <label class="lbl">FYERS App ID (manual override)</label>
                 <input class="inp" id="fyAppId" placeholder="ABCD1234-100">
               </div>
@@ -592,12 +596,16 @@ function initCredentials() {
     fyAppId: localStorage.getItem('ts_fy_app_id') || '',
     fyAccessToken: '',
     fyRedirect: savedRedirect,
+    backendUrl: localStorage.getItem('ts_backend_api_url') || '',
   };
   localStorage.removeItem('ts_fy_access_token');
   localStorage.removeItem('ts_fy_refresh_token');
 
   document.getElementById('sbUrl').value = saved.sbUrl;
   document.getElementById('sbKey').value = saved.sbKey;
+  const backendEl = document.getElementById('backendUrl');
+  if (backendEl) backendEl.value = saved.backendUrl;
+  try { if (saved.backendUrl) window.TRADESCOPE_API_BASE_URL = saved.backendUrl; } catch {}
   document.getElementById('fyAppId').value = saved.fyAppId;
   document.getElementById('fyAccessToken').value = saved.fyAccessToken;
   document.getElementById('fyRedirect').value = saved.fyRedirect;
@@ -637,7 +645,7 @@ function extractFyersAccessToken(rawValue) {
 }
 
 async function exchangeFyersAuthCode(authCode, appId) {
-  const apiBaseUrl = (window.TRADESCOPE_API_BASE_URL || localStorage.getItem('ts_backend_api_url') || '').trim().replace(/\/$/, '');
+  const apiBaseUrl = (window.TRADESCOPE_API_BASE_URL || localStorage.getItem('ts_backend_api_url') || document.getElementById('backendUrl')?.value || '').trim().replace(/\/$/, '');
   if (apiBaseUrl) {
     const res = await fetch(`${apiBaseUrl}/api/fyers/token`, {
       method: 'POST',
@@ -654,7 +662,9 @@ async function exchangeFyersAuthCode(authCode, appId) {
     }
 
     if (!res.ok || !data.success) {
-      throw new Error(data.message || `FYERS token exchange failed (${res.status})`);
+      const msg = data?.message || data?.fyers_error || `FYERS token exchange failed (${res.status})`;
+      const detail = data && typeof data === 'object' ? JSON.stringify(data) : '';
+      throw new Error(msg + (detail ? ' | ' + detail : ''));
     }
 
     return data;
@@ -687,7 +697,9 @@ async function exchangeFyersAuthCode(authCode, appId) {
   }
 
   if (!res.ok || !data.success) {
-    throw new Error(data.message || `FYERS token exchange failed (${res.status})`);
+    const msg = data?.message || data?.error || `FYERS token exchange failed (${res.status})`;
+    const detail = data && typeof data === 'object' ? JSON.stringify(data) : '';
+    throw new Error(msg + (detail ? ' | ' + detail : ''));
   }
 
   return data;
@@ -735,7 +747,14 @@ async function syncTokenFromUrl() {
 
     if (authCodeFromUrl) {
       showAlert('connectAlert', 'info', 'FYERS auth code mila. Access token generate ho raha hai...');
-      const tokenData = await exchangeFyersAuthCode(authCodeFromUrl, appIdFromUrl);
+      let tokenData;
+      try {
+        tokenData = await exchangeFyersAuthCode(authCodeFromUrl, appIdFromUrl);
+      } catch (e) {
+        console.error('Token exchange failed:', e);
+        showAlert('connectAlert', 'err', 'Auto-exchange failed: ' + (e.message || 'Server unreachable. Set Backend API URL in Setup.'));
+        return false;
+      }
       const appEl = document.getElementById('fyAppId');
 
       if (tokenData.access_token) {
@@ -790,7 +809,7 @@ function clearManualToken() {
 }
 
 function resetSavedSetup() {
-  ['ts_sb_url', 'ts_sb_key', 'ts_fy_app_id', 'ts_fy_access_token', 'ts_fy_redirect'].forEach((k) => localStorage.removeItem(k));
+  ['ts_sb_url', 'ts_sb_key', 'ts_fy_app_id', 'ts_fy_access_token', 'ts_fy_redirect', 'ts_backend_api_url'].forEach((k) => localStorage.removeItem(k));
 
   const sbUrlEl = document.getElementById('sbUrl');
   const sbKeyEl = document.getElementById('sbKey');
@@ -803,6 +822,8 @@ function resetSavedSetup() {
   if (fyAppEl) fyAppEl.value = '';
   if (fyTokenEl) fyTokenEl.value = '';
   if (fyRedirectEl) fyRedirectEl.value = DEFAULT_FYERS_REDIRECT;
+  const backendEl = document.getElementById('backendUrl');
+  if (backendEl) backendEl.value = '';
 
   connected = false;
   const dot = document.getElementById('statusDot');
@@ -854,6 +875,16 @@ async function openFyersTokenPage() {
   
   localStorage.setItem('ts_fy_app_id', appId);
   localStorage.setItem('ts_fy_redirect', redirect);
+  // Persist backend API URL if user provided it in setup
+  try {
+    const backendEl = document.getElementById('backendUrl');
+    if (backendEl && backendEl.value) {
+      localStorage.setItem('ts_backend_api_url', String(backendEl.value).trim());
+      window.TRADESCOPE_API_BASE_URL = String(backendEl.value).trim();
+    }
+  } catch (e) {
+    // ignore DOM issues
+  }
   
   const authUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${encodeURIComponent(appId)}&redirect_uri=${encodeURIComponent(redirect)}&response_type=code&state=tradescope`;
   window.location.href = authUrl;
