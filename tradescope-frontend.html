@@ -565,13 +565,9 @@ supabase functions deploy scan-combo
       <div class="card">
         <div style="font-weight:600;margin-bottom:14px;">🔐 FYERS Token Exchange</div>
         <div style="margin-bottom:16px;padding:10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:13px;color:#1d4ed8;">
-          Auth code को App ID और Secret ID के साथ paste करो। Python script से access token मिलेगा।
+          Auth code, App ID, Secret ID डालो। Backend Python script से token निकालेगा।
         </div>
         <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px;">
-          <div>
-            <label class="lbl">Backend Exchange URL</label>
-            <input class="inp" id="exchangeBackendUrl" placeholder="https://py-exchange-host.com/exchange या blank for /exchange">
-          </div>
           <div>
             <label class="lbl">App ID (client_id)</label>
             <input class="inp" id="exchangeAppId" placeholder="GCANHWSSCK-100">
@@ -942,7 +938,6 @@ function getFyersOverrideCredentials() {
 
 async function performManualExchange() {
   try {
-    const backendUrl = (document.getElementById('exchangeBackendUrl')?.value || '').trim() || '/exchange';
     const appId = (document.getElementById('exchangeAppId')?.value || '').trim();
     const secretId = (document.getElementById('exchangeSecretId')?.value || '').trim();
     const authCode = (document.getElementById('exchangeAuthCode')?.value || '').trim();
@@ -954,10 +949,7 @@ async function performManualExchange() {
 
     showAlert('exchangeAlert', 'info', 'Token exchange जा रहा है...');
 
-    const target = backendUrl.replace(/\/+$/, '');
-    const url = target.endsWith('/exchange') ? target : `${target}/exchange`;
-
-    const res = await fetch(url, {
+    const res = await fetch('/exchange', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ auth_code: authCode, app_id: appId, secret_id: secretId }),
