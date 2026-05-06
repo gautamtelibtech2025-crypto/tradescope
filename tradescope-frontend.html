@@ -949,7 +949,10 @@ async function performManualExchange() {
 
     showAlert('exchangeAlert', 'info', 'Token exchange जा रहा है...');
 
-    const res = await fetch('/exchange', {
+    // Call Supabase Edge Function
+    const supabaseUrl = 'https://ebsjzvjdwljahmrpxkmc.supabase.co/functions/v1/fyers-token';
+    
+    const res = await fetch(supabaseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ auth_code: authCode, app_id: appId, secret_id: secretId }),
