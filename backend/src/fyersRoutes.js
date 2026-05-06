@@ -1,11 +1,17 @@
 import crypto from "node:crypto";
 import express from "express";
+import { execFile } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   getFyersAccessToken,
   getFyersTokenState,
   hasFyersAccessToken,
   saveFyersToken,
 } from "./fyersTokenStore.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PYTHON_SCRIPT = path.join(__dirname, "../../scripts/fyers_token.py");
 
 const router = express.Router();
 const FYERS_BASE_URL = "https://api-t1.fyers.in/api/v3";
@@ -98,45 +104,48 @@ router.post("/token", async (req, res, next) => {
       });
     }
 
-    // Generate hash and exchange code with FYERS
-    const appIdHash = sha256Hex(`${appId}:${secretId}`);
-
-    let fyersResponse;
-    let text;
-    try {
-      fyersResponse = await fetch(`${FYERS_BASE_URL}/validate-authcode`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          grant_type: "authorization_code",
-          appIdHash,
-          code: authCode,
-        }),
-        signal: AbortSignal.timeout(10000), // 10 second timeout
-      });
-
-      text = await fyersResponse.text();
-    } catch (fetchErr) {
-      if (fetchErr.name === "AbortError") {
-        return res.status(504).json({
-          success: false,
-          message: "FYERS API request timed out.",
-          hint: "The request to FYERS took too long. Please try again.",
-        });
-      }
-      throw fetchErr;
-    }
+    // Delegate to Python script (proven FYERS exchange logic)
+    const pythonArgs = [
+      "--auth-code", authCode,
+      "--app-id", appId,
+      "--secret-id", secretId,
+      "--redirect-uri", String(process.env.FYERS_REDIRECT_URI || "").trim(),
+      "--print-json"
+    ];
 
     let data;
     try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = { s: "error", message: text || "FYERS returned a non-JSON response." };
+      data = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Python script execution timed out (15s)"));
+        }, 15000);
+
+        execFile("python3", [PYTHON_SCRIPT, ...pythonArgs], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+          clearTimeout(timeout);
+          if (err) return reject(err);
+          if (stderr) console.warn("[fyers-token] Python stderr:", stderr);
+          try {
+            const lines = stdout.trim().split("\n");
+            const jsonLine = lines.find(l => l.startsWith("{"));
+            if (!jsonLine) return reject(new Error("No JSON output from Python script: " + stdout));
+            resolve(JSON.parse(jsonLine));
+          } catch (e) {
+            reject(new Error("Failed to parse Python JSON: " + e.message + " | output: " + stdout));
+          }
+        });
+      });
+    } catch (pythonErr) {
+      return res.status(500).json({
+        success: false,
+        message: "Token exchange failed: " + (pythonErr.message || "Unknown error"),
+        hint: "Check that FYERS secrets are configured and Python script is available.",
+        error: pythonErr.message,
+      });
     }
 
-    // Handle various FYERS error responses
-    if (!fyersResponse.ok) {
-      const errorMsg = data.message || data.error || "FYERS API returned an error.";
+    // Handle response from Python script
+    if (!data.success && data.s !== "ok") {
+      const errorMsg = data.message || data.error || "FYERS exchange failed.";
       
       // Common FYERS error codes
       if (errorMsg.toLowerCase().includes("invalid") || errorMsg.toLowerCase().includes("expired")) {
@@ -157,10 +166,10 @@ router.post("/token", async (req, res, next) => {
         });
       }
 
-      return res.status(fyersResponse.status).json({
+      return res.status(400).json({
         success: false,
         message: errorMsg,
-        fyers_status: fyersResponse.status,
+        fyers_response: data,
       });
     }
 
