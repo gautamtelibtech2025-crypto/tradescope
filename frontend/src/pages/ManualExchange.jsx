@@ -80,10 +80,43 @@ export default function ManualExchange() {
         <h3>Result</h3>
         {loading ? <div>Running exchange...</div> : null}
         {error ? (
-          <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(error, null, 2)}</pre>
+          <div style={{ padding: "12px", background: "#ffebee", border: "1px solid #ef5350", borderRadius: "4px" }}>
+            <strong>Error:</strong>
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: "12px" }}>{JSON.stringify(error, null, 2)}</pre>
+          </div>
         ) : null}
         {result ? (
-          <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(result, null, 2)}</pre>
+          <div style={{ padding: "12px", background: "#e8f5e9", border: "1px solid #66bb6a", borderRadius: "4px" }}>
+            <strong>Success!</strong>
+            {result.access_token ? (
+              <div style={{ marginTop: "12px" }}>
+                <div style={{ marginBottom: "8px" }}>
+                  <strong>Access Token:</strong>
+                  <input
+                    type="text"
+                    readOnly
+                    value={result.access_token}
+                    style={{ width: "100%", marginTop: "4px", padding: "8px", fontFamily: "monospace", fontSize: "11px" }}
+                  />
+                </div>
+                {result.refresh_token ? (
+                  <div>
+                    <strong>Refresh Token:</strong>
+                    <input
+                      type="text"
+                      readOnly
+                      value={result.refresh_token}
+                      style={{ width: "100%", marginTop: "4px", padding: "8px", fontFamily: "monospace", fontSize: "11px" }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <details style={{ marginTop: "12px" }}>
+              <summary>Full Response</summary>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: "12px", marginTop: "8px" }}>{JSON.stringify(result, null, 2)}</pre>
+            </details>
+          </div>
         ) : null}
       </section>
     </main>

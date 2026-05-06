@@ -1,10 +1,12 @@
 import FyersConnectButton from "../components/FyersConnectButton";
 import { buildFyersLoginUrl } from "../lib/fyersAuth";
+import { useNavigate } from "react-router-dom";
 
 const appId = import.meta.env.VITE_FYERS_APP_ID || "";
 const redirectUri = import.meta.env.VITE_FYERS_REDIRECT_URI || `${window.location.origin}/callback`;
 
 export default function Home() {
+  const navigate = useNavigate();
   const devAuthEnabled = new URLSearchParams(window.location.search).get("devAuth") === "1";
 
   function openManualFyersAuth() {
@@ -40,6 +42,15 @@ export default function Home() {
           </button>
         </section>
       ) : null}
+
+      {/* Manual Exchange Page */}
+      <section className="manual-exchange-section">
+        <h2>Manual Token Exchange</h2>
+        <p>Paste your App ID, Secret ID, and Auth Code to exchange for tokens.</p>
+        <button type="button" onClick={() => navigate("/manual-exchange")}>
+          Go to Manual Exchange
+        </button>
+      </section>
     </main>
   );
 }
