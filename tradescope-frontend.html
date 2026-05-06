@@ -209,6 +209,14 @@ tbody td { padding:10px 12px; white-space:nowrap; }
                 <label class="lbl">FYERS Access Token (auto/manual)</label>
                 <input class="inp" id="fyAccessToken" placeholder="Paste token or auto-fill from callback URL">
               </div>
+              <div>
+                <label class="lbl">Manual FYERS callback URL or auth code</label>
+                <div style="display:flex;gap:8px;">
+                  <input class="inp" id="manualAuthUrl" placeholder="Paste full callback URL or raw auth code here">
+                  <button class="btn btn-primary btn-sm" onclick="useManualAuthCode()">Use Auth Code</button>
+                </div>
+                <div style="margin-top:6px;font-size:12px;color:#6b7280;">If FYERS redirected to another device, paste the callback URL (contains <code>?code=</code> or <code>?auth_code=</code>) or paste the raw auth code.</div>
+              </div>
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
@@ -780,6 +788,60 @@ async function syncTokenFromUrl() {
     showAlert('connectAlert', 'err', 'FYERS token auto-generate failed: ' + (e.message || 'Auth code dobara generate karo.'));
   }
   return false;
+}
+
+async function useManualAuthCode() {
+  try {
+    const raw = (document.getElementById('manualAuthUrl')?.value || '').trim();
+    if (!raw) {
+      showAlert('connectAlert', 'err', 'Please paste the callback URL or auth code first.');
+      return;
+    }
+
+    // Try to parse as URL
+    let code = '';
+    try {
+      const url = new URL(raw);
+      code = url.searchParams.get('code') || url.searchParams.get('auth_code') || '';
+    } catch {
+      const m = raw.match(/(?:[?&](?:auth_code|code)=)([^&\s]+)/);
+      if (m) code = m[1];
+    }
+
+    if (!code && /^[A-Za-z0-9._-]+$/.test(raw)) code = raw;
+
+    if (!code) {
+      showAlert('connectAlert', 'err', 'Could not extract auth code. Paste full callback URL or raw code.');
+      return;
+    }
+
+    showAlert('connectAlert', 'info', 'Using provided auth code. Exchanging token...');
+    let tokenData;
+    try {
+      tokenData = await exchangeFyersAuthCode(code);
+    } catch (e) {
+      console.error('Manual exchange failed:', e);
+      showAlert('connectAlert', 'err', 'Manual exchange failed: ' + (e.message || e));
+      return;
+    }
+
+    if (tokenData.access_token) {
+      const tokenEl = document.getElementById('fyAccessToken');
+      if (tokenEl) tokenEl.value = extractFyersAccessToken(tokenData.access_token);
+    }
+    if (tokenData.app_id) {
+      const appEl = document.getElementById('fyAppId');
+      if (appEl) appEl.value = tokenData.app_id;
+      localStorage.setItem('ts_fy_app_id', tokenData.app_id);
+    }
+
+    history.replaceState({}, document.title, window.location.pathname);
+    showAlert('connectAlert', 'ok', 'Manual exchange complete. Connecting...');
+    await connectApp();
+  } catch (err) {
+    console.error(err);
+    showAlert('connectAlert', 'err', 'Unexpected error: ' + (err.message || err));
+  }
 }
 
 function getFyersOverrideCredentials() {
