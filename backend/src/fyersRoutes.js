@@ -57,21 +57,59 @@ router.post("/token", async (req, res, next) => {
     const { appId, secretId } = getRequiredFyersConfig(req.body?.app_id);
 
     if (!authCode) {
-      return res.status(400).json({ success: false, message: "FYERS auth code is required." });
+      return res.status(400).json({
+        success: false,
+        message: "FYERS auth code is required.",
+        hint: "Auth code must be provided in request body as 'code' or 'auth_code'.",
+      });
     }
 
-    const appIdHash = sha256Hex(`${appId}:${secretId}`);
-    const fyersResponse = await fetch(`${FYERS_BASE_URL}/validate-authcode`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        appIdHash,
-        code: authCode,
-      }),
-    });
+    // Validate code format (should be alphanumeric, typically 20-40 chars)
+    if (!/^[a-zA-Z0-9\-_]+$/.test(authCode)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid FYERS auth code format.",
+        hint: "Auth code should be alphanumeric.",
+      });
+    }
 
-    const text = await fyersResponse.text();
+    if (authCode.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Auth code appears too short.",
+        hint: "FYERS auth codes are typically 20+ characters.",
+      });
+    }
+
+    // Generate hash and exchange code with FYERS
+    const appIdHash = sha256Hex(`${appId}:${secretId}`);
+
+    let fyersResponse;
+    let text;
+    try {
+      fyersResponse = await fetch(`${FYERS_BASE_URL}/validate-authcode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          appIdHash,
+          code: authCode,
+        }),
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      });
+
+      text = await fyersResponse.text();
+    } catch (fetchErr) {
+      if (fetchErr.name === "AbortError") {
+        return res.status(504).json({
+          success: false,
+          message: "FYERS API request timed out.",
+          hint: "The request to FYERS took too long. Please try again.",
+        });
+      }
+      throw fetchErr;
+    }
+
     let data;
     try {
       data = text ? JSON.parse(text) : {};
@@ -79,14 +117,46 @@ router.post("/token", async (req, res, next) => {
       data = { s: "error", message: text || "FYERS returned a non-JSON response." };
     }
 
-    if (!fyersResponse.ok || data.s !== "ok" || !data.access_token) {
-      return res.status(fyersResponse.ok ? 400 : fyersResponse.status).json({
+    // Handle various FYERS error responses
+    if (!fyersResponse.ok) {
+      const errorMsg = data.message || data.error || "FYERS API returned an error.";
+      
+      // Common FYERS error codes
+      if (errorMsg.toLowerCase().includes("invalid") || errorMsg.toLowerCase().includes("expired")) {
+        return res.status(400).json({
+          success: false,
+          message: "Authorization code expired or invalid.",
+          hint: "Auth codes expire within 5-10 minutes. Please start the OAuth flow again.",
+          fyers_error: errorMsg,
+        });
+      }
+
+      if (errorMsg.toLowerCase().includes("invalid_client")) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid FYERS client configuration.",
+          hint: "Check that FYERS_APP_ID and FYERS_SECRET_ID are correct.",
+          fyers_error: errorMsg,
+        });
+      }
+
+      return res.status(fyersResponse.status).json({
         success: false,
-        message: data.message || "FYERS token exchange failed.",
-        fyers: data,
+        message: errorMsg,
+        fyers_status: fyersResponse.status,
       });
     }
 
+    // Check for successful response
+    if (data.s !== "ok" || !data.access_token) {
+      return res.status(400).json({
+        success: false,
+        message: data.message || "FYERS token exchange failed - no access token returned.",
+        fyers_response_status: data.s,
+      });
+    }
+
+    // Success! Save token securely on backend
     saveFyersToken({
       accessToken: data.access_token,
       refreshToken: data.refresh_token || "",
@@ -101,6 +171,7 @@ router.post("/token", async (req, res, next) => {
       updated_at: getFyersTokenState().updatedAt,
     };
 
+    // Only return tokens if explicitly enabled (for testing)
     if (process.env.FYERS_RETURN_TOKEN === "true") {
       payload.access_token = data.access_token;
       payload.refresh_token = data.refresh_token || "";

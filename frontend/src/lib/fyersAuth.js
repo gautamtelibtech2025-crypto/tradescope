@@ -1,6 +1,10 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:10000";
 const FYERS_AUTH_BASE = "https://api-t1.fyers.in/api/v3/generate-authcode";
 
+/**
+ * Extract FYERS access token from various input formats
+ * Supports: Bearer token, JSON, JWT, direct token
+ */
 export function extractFyersAccessToken(rawValue) {
   const value = String(rawValue || "").trim();
   if (!value) return "";
@@ -28,6 +32,10 @@ export function extractFyersAccessToken(rawValue) {
   return value;
 }
 
+/**
+ * Extract FYERS auth code from callback URL
+ * Searches: query params (?code=, ?auth_code=) and hash params (#code=, #auth_code=)
+ */
 export function getFyersCodeFromUrl(location = window.location) {
   const searchParams = new URLSearchParams(location.search || "");
   const hashParams = new URLSearchParams((location.hash || "").replace(/^#/, ""));
@@ -41,6 +49,10 @@ export function getFyersCodeFromUrl(location = window.location) {
   ).trim();
 }
 
+/**
+ * Build FYERS OAuth login URL
+ * User will be redirected to this URL to authorize TradeScope
+ */
 export function buildFyersLoginUrl({ appId, redirectUri, state = "tradescope-dev" }) {
   const url = new URL(FYERS_AUTH_BASE);
   url.searchParams.set("client_id", appId);
@@ -50,6 +62,18 @@ export function buildFyersLoginUrl({ appId, redirectUri, state = "tradescope-dev
   return url.toString();
 }
 
+/**
+ * Exchange FYERS auth code for access token
+ * Calls backend endpoint which:
+ * 1. Validates auth code
+ * 2. Calls FYERS API with app ID hash
+ * 3. Exchanges code for access_token + refresh_token
+ * 4. Stores tokens securely on backend
+ * 5. Never exposes tokens to frontend logs/UI
+ * 
+ * @throws {Error} If exchange fails
+ * @returns {Promise<Object>} Response with success flag
+ */
 export async function exchangeFyersCode(code) {
   const response = await fetch(`${API_BASE_URL}/api/fyers/token`, {
     method: "POST",

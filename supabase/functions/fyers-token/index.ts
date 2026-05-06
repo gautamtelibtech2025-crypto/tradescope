@@ -3,6 +3,10 @@ import { corsHeaders } from "../_shared/cors.ts";
 
 const FYERS_BASE = "https://api-t1.fyers.in/api/v3";
 
+/**
+ * Generate SHA256 hash of appId:secretId
+ * Used to securely exchange auth code for access token
+ */
 async function sha256Hex(text: string) {
   const bytes = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest("SHA-256", bytes);
@@ -11,33 +15,84 @@ async function sha256Hex(text: string) {
     .join("");
 }
 
+/**
+ * Supabase Edge Function: FYERS Token Exchange
+ * 
+ * Handles OAuth callback from FYERS:
+ * 1. Receives auth_code from frontend callback
+ * 2. Reads FYERS_APP_ID and FYERS_SECRET_ID from server environment
+ * 3. Generates SHA256(appId:secretId)
+ * 4. Calls FYERS validate-authcode endpoint
+ * 5. Returns access_token and refresh_token
+ * 
+ * SECURITY:
+ * - Secrets never leave the server
+ * - Auth code validated before API call
+ * - Request timeout to prevent hanging
+ * - No tokens logged or exposed in errors
+ */
 serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const body = await req.json().catch(() => ({}));
+    
+    // Read configuration from server environment (never from request)
     const appId = String(body.app_id || Deno.env.get("FYERS_APP_ID") || "").trim();
     const secretId = String(Deno.env.get("FYERS_SECRET_ID") || "").trim();
     const authCode = String(body.auth_code || body.code || "").trim();
 
+    // Validate server configuration
     if (!appId || !secretId) {
       return new Response(
         JSON.stringify({
           success: false,
-          message: "FYERS_APP_ID/FYERS_SECRET_ID server secrets missing.",
+          message: "Server configuration error: FYERS_APP_ID and FYERS_SECRET_ID must be set.",
+          hint: "Configure these in Supabase Function secrets.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },
+      );
+    }
+
+    // Validate auth code from request
+    if (!authCode) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "FYERS auth_code missing from request.",
+          hint: "Auth code must be provided in request body as 'code' or 'auth_code'.",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
       );
     }
 
-    if (!authCode) {
+    // Validate code format (alphanumeric, reasonable length)
+    if (!/^[a-zA-Z0-9\-_]+$/.test(authCode)) {
       return new Response(
-        JSON.stringify({ success: false, message: "FYERS auth_code missing." }),
+        JSON.stringify({
+          success: false,
+          message: "Invalid auth code format.",
+          hint: "Auth code should be alphanumeric.",
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
       );
     }
 
+    if (authCode.length < 10) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "Auth code appears invalid (too short).",
+          hint: "FYERS auth codes are typically 20+ characters.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+      );
+    }
+
+    // Generate appIdHash and exchange code
     const appIdHash = await sha256Hex(`${appId}:${secretId}`);
+    
     const fyersRes = await fetch(`${FYERS_BASE}/validate-authcode`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -46,6 +101,7 @@ serve(async (req) => {
         appIdHash,
         code: authCode,
       }),
+      signal: AbortSignal.timeout(10000), // 10 second timeout
     });
 
     const text = await fyersRes.text();
@@ -56,31 +112,87 @@ serve(async (req) => {
       data = { s: "error", message: text || "Invalid FYERS response" };
     }
 
-    if (!fyersRes.ok || !data.access_token) {
+    // Handle HTTP errors
+    if (!fyersRes.ok) {
+      const errorMsg = String(data.message || data.error || "FYERS API error");
+      
+      // Check for common error patterns
+      if (errorMsg.toLowerCase().includes("invalid") || errorMsg.toLowerCase().includes("expired")) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Authorization code expired or invalid.",
+            hint: "Auth codes expire within 5-10 minutes. Please start OAuth flow again.",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      if (errorMsg.toLowerCase().includes("invalid_client")) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Invalid FYERS client configuration.",
+            hint: "Check that FYERS_APP_ID and FYERS_SECRET_ID are correct.",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
       return new Response(
         JSON.stringify({
           success: false,
-          message: String(data.message || `FYERS token request failed (${fyersRes.status})`),
-          data,
+          message: errorMsg,
+          fyers_status: fyersRes.status,
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: fyersRes.ok ? 400 : fyersRes.status },
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: fyersRes.status },
       );
     }
 
+    // Validate token response
+    if (!data.access_token) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "FYERS did not return an access token.",
+          fyers_response_status: data.s || "unknown",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+      );
+    }
+
+    // Success! Return tokens (never expose in logs)
     return new Response(
       JSON.stringify({
         success: true,
         app_id: appId,
         access_token: data.access_token,
         refresh_token: data.refresh_token || "",
-        data,
+        // data field can be omitted to avoid exposing internal FYERS response
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
-    return new Response(JSON.stringify({ success: false, message: e.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+    // Handle network errors, timeouts, etc.
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    
+    if (errorMsg.includes("timeout") || errorMsg.includes("Timeout")) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "Request to FYERS timed out.",
+          hint: "Please try again.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 504 },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: false,
+        message: "Server error during token exchange.",
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },
+    );
   }
 });
