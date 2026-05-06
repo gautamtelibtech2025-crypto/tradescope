@@ -38,9 +38,9 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     
-    // Read configuration from server environment (never from request)
+    // Read configuration from request or server environment
     const appId = String(body.app_id || Deno.env.get("FYERS_APP_ID") || "").trim();
-    const secretId = String(Deno.env.get("FYERS_SECRET_ID") || "").trim();
+    const secretId = String(body.secret_id || body.secret_key || Deno.env.get("FYERS_SECRET_ID") || "").trim();
     const authCode = String(body.auth_code || body.code || "").trim();
 
     // Validate server configuration
@@ -48,10 +48,10 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          message: "Server configuration error: FYERS_APP_ID and FYERS_SECRET_ID must be set.",
-          hint: "Configure these in Supabase Function secrets.",
+          message: "FYERS configuration error: app_id and secret_id missing.",
+          hint: "Pass 'app_id' and 'secret_id' in request body, or set FYERS_APP_ID and FYERS_SECRET_ID environment variables.",
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
       );
     }
 
