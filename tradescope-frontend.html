@@ -214,7 +214,7 @@ tbody td { padding:10px 12px; white-space:nowrap; }
                   <input class="inp" id="fyRedirect" placeholder="http://127.0.0.1:17863/callback">
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                  <button class="btn btn-outline btn-sm" onclick="openFyersTokenPage()">🔐 Generate Access Token</button>
+                  <button class="btn btn-primary btn-sm" onclick="openFyersTokenPage()">🔗 Connect FYERS Account</button>
                   <button class="btn btn-outline btn-sm" onclick="clearManualToken()">🧹 Clear Manual Token</button>
                 </div>
               </div>
@@ -529,12 +529,12 @@ const scanResults = {};
 const DEFAULT_SB_URL = '';
 const DEFAULT_SB_KEY = 'sb_publishable_RvP26Tv0JsvZkLGBvi8B5A_MycDvpbj';
 const DEFAULT_SB_PROJECT_URL = 'https://ebsjzvjdwljahmrpxkmc.supabase.co'; // Backend config fetched from here
-const RENDER_FYERS_REDIRECT = 'https://tradescope-frontend.onrender.com/auth/callback';
+const RENDER_FYERS_REDIRECT = 'https://tradescope-frontend.onrender.com/callback';
 const DEFAULT_FYERS_REDIRECT = (() => {
   try {
     const isRender = window.location.hostname === 'tradescope-frontend.onrender.com';
     if (isRender) return RENDER_FYERS_REDIRECT;
-    return `${window.location.origin}/auth/callback`;
+    return `${window.location.origin}/callback`;
   } catch {
     return RENDER_FYERS_REDIRECT;
   }
@@ -854,8 +854,8 @@ async function openFyersTokenPage() {
   localStorage.setItem('ts_fy_redirect', redirect);
   
   const authUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${encodeURIComponent(appId)}&redirect_uri=${encodeURIComponent(redirect)}&response_type=code&state=tradescope`;
-  window.open(authUrl, '_blank', 'noopener,noreferrer');
-  showAlert('connectAlert', 'info', 'FYERS auth page nayi tab me open ho gayi. Login karke approve karο, PowerShell automatically token capture kar lega.');
+  window.location.href = authUrl;
+  showAlert('connectAlert', 'info', 'FYERS login page open ho rahi hai. Login karke approve karo, phir app automatically callback handle karega.');
 }
 
 async function fetchConfigFromBackend(options = {}) {
