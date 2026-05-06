@@ -138,6 +138,21 @@ tbody td { padding:10px 12px; white-space:nowrap; }
   .stats-row { grid-template-columns:1fr 1fr; }
   .setup-grid { grid-template-columns:1fr; }
 }
+
+function toggleManualAuthTop() {
+  const el = document.getElementById('manualTop');
+  if (!el) return;
+  el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+
+async function useManualAuthCodeTop() {
+  const v = (document.getElementById('manualTopInput')?.value || '').trim();
+  if (!v) { showAlert('connectAlert','err','Paste a callback URL or auth code.'); return; }
+  const manualEl = document.getElementById('manualAuthUrl');
+  if (manualEl) manualEl.value = v;
+  toggleManualAuthTop();
+  await useManualAuthCode();
+}
 </style>
 </head>
 <body>
@@ -148,12 +163,20 @@ tbody td { padding:10px 12px; white-space:nowrap; }
   <div class="top-right">
     <button class="btn btn-outline btn-sm nav-toggle" onclick="toggleMobileNav()">☰</button>
     <button class="btn btn-primary btn-sm" onclick="openFyersTokenPage()">🔐 Generate Access Token</button>
+    <button class="btn btn-outline btn-sm" onclick="toggleManualAuthTop()">Paste Code</button>
     <div class="status-badge">
       <div class="dot" id="statusDot"></div>
       <span id="statusText">Not Connected</span>
     </div>
     <button class="btn btn-outline btn-sm" onclick="showPage('setup')">⚙ Setup</button>
   </div>
+</div>
+
+<!-- Manual auth top popup -->
+<div id="manualTop" style="display:none; position:fixed; top:56px; right:18px; background:#fff; padding:10px; border:1px solid #e5e7eb; border-radius:8px; z-index:300; box-shadow:0 6px 18px rgba(15,23,42,.08);">
+  <input id="manualTopInput" class="inp" placeholder="Paste callback URL or auth code" style="width:320px; margin-right:8px;">
+  <button class="btn btn-primary btn-sm" onclick="useManualAuthCodeTop()">Use</button>
+  <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="toggleManualAuthTop()">Close</button>
 </div>
 
 <div class="layout">
